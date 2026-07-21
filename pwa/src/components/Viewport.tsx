@@ -10,6 +10,7 @@ import { gizmoState } from "../lib/gizmoState";
 import { ShapeMesh } from "./ShapeMesh";
 import { GroupMesh } from "./GroupMesh";
 import { Gizmo } from "./Gizmo";
+import { ResizeHandles } from "./ResizeHandles";
 import { SceneRig } from "./SceneRig";
 
 // CAD/STL convention: Z is up, the workplane is XY.
@@ -269,9 +270,10 @@ export function Viewport() {
     >
       <Canvas
         onPointerMissed={() => {
-          // A finished marquee also ends with a click on empty canvas — don't
-          // let that wipe the selection it just made.
+          // A finished marquee or handle drag also ends with a click on empty
+          // canvas — don't let that wipe the selection it just made.
           if (performance.now() - marqueeEndedAt.current < 300) return;
+          if (performance.now() - gizmoState.lastInteractionEnd < 300) return;
           const s = useScene.getState();
           if (s.workplaneArmed) {
             // Workplane dropped on empty space resets to the floor.
@@ -326,6 +328,7 @@ export function Viewport() {
         })}
 
         <Gizmo />
+        <ResizeHandles />
         <OrbitControls
           makeDefault
           mouseButtons={{
