@@ -32,6 +32,7 @@ export const DEFAULT_PARAMS: Record<
   polygon: { r: 10, h: 20, sides: 6 },
   tube: { r: 10, wall: 3, h: 20, segments: 48 },
   star: { points: 5, r1: 10, r2: 4, h: 5 },
+  heart: { w: 20, h: 10 },
   mesh: {},
 };
 
@@ -49,6 +50,7 @@ export const PALETTE_COLORS: Record<PrimitiveKind, string> = {
   polygon: "#5d6fd6",
   tube: "#8f5dd6",
   star: "#d6b25d",
+  heart: "#d65d7a",
   mesh: "#8d99a6",
 };
 
@@ -210,6 +212,28 @@ export function buildGeometry(node: ShapeNode): THREE.BufferGeometry | null {
         pts.push([r * Math.cos(a), r * Math.sin(a)]);
       }
       geo = extrudeProfile(pts, num(p, "h", 5), 1);
+      break;
+    }
+    case "heart": {
+      // Classic bezier heart profile (spans 22 × 19 units), scaled to the
+      // requested width and extruded.
+      const s = num(p, "w", 20) / 22;
+      const shape = new THREE.Shape();
+      shape.moveTo(5 * s, 5 * s);
+      shape.bezierCurveTo(5 * s, 5 * s, 4 * s, 0, 0, 0);
+      shape.bezierCurveTo(-6 * s, 0, -6 * s, 7 * s, -6 * s, 7 * s);
+      shape.bezierCurveTo(-6 * s, 11 * s, -3 * s, 15.4 * s, 5 * s, 19 * s);
+      shape.bezierCurveTo(12 * s, 15.4 * s, 16 * s, 11 * s, 16 * s, 7 * s);
+      shape.bezierCurveTo(16 * s, 7 * s, 16 * s, 0, 10 * s, 0);
+      shape.bezierCurveTo(7 * s, 0, 5 * s, 5 * s, 5 * s, 5 * s);
+      geo = new THREE.ExtrudeGeometry(shape, {
+        depth: num(p, "h", 10),
+        bevelEnabled: false,
+        curveSegments: 12,
+      });
+      // The classic profile points up; flip so the lobes face +Y.
+      geo.rotateZ(Math.PI);
+      geo.center();
       break;
     }
     case "mesh": {

@@ -16,6 +16,7 @@ const KINDS: { kind: PrimitiveKind; label: string }[] = [
   { kind: "polygon", label: "Polygon" },
   { kind: "tube", label: "Tube" },
   { kind: "star", label: "Star" },
+  { kind: "heart", label: "Heart" },
   { kind: "text", label: "Text" },
 ];
 

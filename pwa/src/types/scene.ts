@@ -16,6 +16,7 @@ export type PrimitiveKind =
   | "polygon"
   | "tube"
   | "star"
+  | "heart"
   | "mesh"; // imported STL/OBJ/SVG geometry, stored in params
 
 export interface ShapeNode {
