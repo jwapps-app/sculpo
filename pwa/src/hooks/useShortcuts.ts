@@ -106,7 +106,8 @@ export function useShortcuts() {
           s.deleteSelected();
           break;
         case "escape":
-          if (s.workplaneArmed) s.setWorkplaneArmed(false);
+          if (s.placing) s.setPlacing(null);
+          else if (s.workplaneArmed) s.setWorkplaneArmed(false);
           else if (s.cruiseMode) s.setCruiseMode(false);
           else if (s.editingGroupId) s.setEditingGroup(null);
           else s.clearSelection();

@@ -116,8 +116,11 @@ interface SceneState {
   ortho: boolean;
   smartDup: SmartDup | null;
   cruiseMode: boolean;
+  placing: PrimitiveKind | null;
 
   addShape: (kind: PrimitiveKind, placement?: Placement) => void;
+  placeShapeAt: (kind: PrimitiveKind, position: Vec3, rotation: Vec3) => void;
+  setPlacing: (kind: PrimitiveKind | null) => void;
   addImportedMesh: (params: Record<string, string>, name: string) => void;
   updateShape: (id: string, patch: Partial<Omit<ShapeNode, "id" | "kind">>) => void;
   setTransform: (id: string, position: Vec3, rotation: Vec3, scale: Vec3) => void;
@@ -166,6 +169,7 @@ export const useScene = create<SceneState>()(
       ortho: false,
       smartDup: null,
       cruiseMode: false,
+      placing: null,
 
       addShape: (kind, placement) => {
         const shape = makeShape(kind);
@@ -217,6 +221,41 @@ export const useScene = create<SceneState>()(
           };
         });
       },
+
+      placeShapeAt: (kind, position, rotation) => {
+        const shape = makeShape(kind);
+        shape.position = [...position];
+        shape.rotation = [...rotation];
+        set((st) => {
+          const editing = st.editingGroupId ? st.project.nodes[st.editingGroupId] : null;
+          if (editing && isGroup(editing)) {
+            return {
+              project: {
+                ...st.project,
+                nodes: {
+                  ...st.project.nodes,
+                  [shape.id]: shape,
+                  [editing.id]: { ...editing, childIds: [...editing.childIds, shape.id] },
+                },
+              },
+              selection: [shape.id],
+              placing: null,
+            };
+          }
+          return {
+            project: {
+              ...st.project,
+              nodes: { ...st.project.nodes, [shape.id]: shape },
+              rootOrder: [...st.project.rootOrder, shape.id],
+            },
+            selection: [shape.id],
+            placing: null,
+          };
+        });
+      },
+
+      setPlacing: (kind) =>
+        set({ placing: kind, ...(kind ? { workplaneArmed: false, cruiseMode: false } : {}) }),
 
       addImportedMesh: (params, name) => {
         const shape = makeShape("mesh");

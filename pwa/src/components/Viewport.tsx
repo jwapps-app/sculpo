@@ -11,7 +11,9 @@ import { ShapeMesh } from "./ShapeMesh";
 import { GroupMesh } from "./GroupMesh";
 import { Gizmo } from "./Gizmo";
 import { ResizeHandles } from "./ResizeHandles";
+import { PlacementPreview } from "./PlacementPreview";
 import { SceneRig } from "./SceneRig";
+import { placementState } from "../lib/placement";
 
 // CAD/STL convention: Z is up, the workplane is XY.
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1);
@@ -209,11 +211,25 @@ export function Viewport() {
   const cruiseDrag = useRef<string | null>(null);
   const wrapper = useRef<HTMLDivElement>(null);
   const cruiseMode = useScene((s) => s.cruiseMode);
+  const placing = useScene((s) => s.placing);
 
   const onPointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
     if (!(e.target instanceof HTMLCanvasElement)) return;
     const s = useScene.getState();
+    if (s.placing) {
+      if (placementState.valid) {
+        const eu = new THREE.Euler().setFromQuaternion(placementState.quaternion, "XYZ");
+        s.placeShapeAt(
+          s.placing,
+          placementState.position.toArray() as [number, number, number],
+          [eu.x, eu.y, eu.z],
+        );
+        placementState.valid = false;
+        gizmoState.lastInteractionEnd = performance.now();
+      }
+      return;
+    }
     if (s.workplaneArmed) return;
     if (gizmoState.busy()) return;
     if (s.cruiseMode && !s.editingGroupId) {
@@ -231,6 +247,10 @@ export function Viewport() {
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
+    if (useScene.getState().placing) {
+      sceneApi.placementMove(e.clientX, e.clientY);
+      return;
+    }
     if (cruiseDrag.current) {
       sceneApi.cruiseMove(cruiseDrag.current, e.clientX, e.clientY);
       return;
@@ -283,7 +303,7 @@ export function Viewport() {
     <div
       ref={wrapper}
       className="relative h-full w-full"
-      style={{ cursor: workplaneArmed ? "crosshair" : undefined }}
+      style={{ cursor: workplaneArmed || placing ? "crosshair" : undefined }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -370,6 +390,7 @@ export function Viewport() {
 
         <Gizmo />
         <ResizeHandles />
+        <PlacementPreview />
         <OrbitControls
           makeDefault
           mouseButtons={{
@@ -388,12 +409,17 @@ export function Viewport() {
           style={marqueeStyle}
         />
       )}
-      {workplaneArmed && (
+      {workplaneArmed && !placing && (
         <div className="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 rounded bg-neutral-800/90 px-3 py-1 text-xs text-white">
           Click a face to set the workplane — click empty space to reset
         </div>
       )}
-      {cruiseMode && !workplaneArmed && (
+      {placing && (
+        <div className="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 rounded bg-neutral-800/90 px-3 py-1 text-xs text-white">
+          Click to place the shape — it snaps against nearby objects · Esc to cancel
+        </div>
+      )}
+      {cruiseMode && !workplaneArmed && !placing && (
         <div className="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 rounded bg-neutral-800/90 px-3 py-1 text-xs text-white">
           Cruise: drag a shape along other surfaces — C or Esc to exit
         </div>

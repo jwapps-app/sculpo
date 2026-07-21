@@ -3,8 +3,16 @@ import { useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import { sceneApi, type ViewName } from "../lib/sceneApi";
-import { workplaneMatrix, workplanePlane } from "../lib/workplane";
+import { workplaneMatrix, workplanePlane, workplaneNormal } from "../lib/workplane";
+import { placementState } from "../lib/placement";
+import { footprint, type Footprint } from "../lib/primitives";
+import { DEFAULT_PARAMS } from "../lib/primitives";
+import type { PrimitiveKind } from "../types/scene";
 import { useScene } from "../state/store";
+
+// How close (mm) a placed shape's edge must come to a neighbor's edge before
+// it snaps flush against it.
+const MAGNET_RANGE = 4;
 
 const VIEW_DIRS: Record<ViewName, THREE.Vector3> = {
   // Slight offset on "top" keeps OrbitControls away from the pole.
@@ -170,10 +178,18 @@ export function SceneRig() {
 
       if (hit && hit.face) {
         // Glide along the face: seat the shape's bottom on the surface,
-        // oriented to the face normal.
+        // oriented to the face normal, but never sunk below the floor.
         const normal = hit.face.normal.clone().transformDirection(hit.object.matrixWorld).normalize();
         obj.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
         obj.position.copy(hit.point).addScaledVector(normal, bottom);
+        if (geo.boundingBox) {
+          const bb = geo.boundingBox;
+          const hx = ((bb.max.x - bb.min.x) / 2) * Math.abs(obj.scale.x);
+          const hy = ((bb.max.y - bb.min.y) / 2) * Math.abs(obj.scale.y);
+          const m = new THREE.Matrix4().makeRotationFromQuaternion(obj.quaternion).elements;
+          const halfZ = Math.abs(m[2]) * hx + Math.abs(m[6]) * hy + Math.abs(m[10]) * bottom;
+          if (obj.position.z < halfZ) obj.position.z = halfZ;
+        }
       } else {
         // Back on the floor: upright, resting on the plane.
         const p = new THREE.Vector3();
@@ -190,6 +206,88 @@ export function SceneRig() {
         obj.position.set(p.x, p.y, bottom);
       }
       obj.updateMatrixWorld(true);
+    };
+
+    const footprints = new Map<PrimitiveKind, Footprint>();
+    const footprintFor = (kind: PrimitiveKind): Footprint => {
+      let fp = footprints.get(kind);
+      if (!fp) {
+        fp = footprint(kind, DEFAULT_PARAMS[kind]);
+        footprints.set(kind, fp);
+      }
+      return fp;
+    };
+
+    sceneApi.placementMove = (clientX, clientY) => {
+      const s = useScene.getState();
+      if (!s.placing) {
+        placementState.valid = false;
+        return;
+      }
+      const fp = footprintFor(s.placing);
+      const raycaster = new THREE.Raycaster();
+      raycaster.setFromCamera(clientToNdc(clientX, clientY), camera);
+      const hit = raycaster.intersectObjects(nodeMeshes(), false).find((h) => h.face);
+
+      if (hit && hit.face) {
+        // Seat the ghost on the hovered face, oriented to its normal, but
+        // never sunk below the floor.
+        const normal = hit.face.normal.clone().transformDirection(hit.object.matrixWorld).normalize();
+        placementState.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
+        placementState.position.copy(hit.point).addScaledVector(normal, fp.bottom);
+        const m = new THREE.Matrix4().makeRotationFromQuaternion(placementState.quaternion).elements;
+        const halfZ =
+          Math.abs(m[2]) * fp.halfW + Math.abs(m[6]) * fp.halfD + Math.abs(m[10]) * fp.bottom;
+        if (placementState.position.z < halfZ) placementState.position.z = halfZ;
+        placementState.valid = true;
+        return;
+      }
+
+      // Floor (or active workplane) placement.
+      const p = new THREE.Vector3();
+      if (!raycaster.ray.intersectPlane(workplanePlane(s.workplane), p)) {
+        placementState.valid = false;
+        return;
+      }
+      if (s.workplane) {
+        placementState.quaternion.setFromUnitVectors(
+          new THREE.Vector3(0, 0, 1),
+          workplaneNormal(s.workplane),
+        );
+        placementState.position
+          .copy(p)
+          .addScaledVector(workplaneNormal(s.workplane), fp.bottom);
+        placementState.valid = true;
+        return;
+      }
+
+      if (s.snap) {
+        p.x = Math.round(p.x / s.snapStep) * s.snapStep;
+        p.y = Math.round(p.y / s.snapStep) * s.snapStep;
+      }
+      // Magnetic snap: pull flush against nearby objects' bounds.
+      const boxes: THREE.Box3[] = [];
+      for (const id of s.project.rootOrder) {
+        const node = s.project.nodes[id];
+        if (!node || node.hidden) continue;
+        const b = sceneApi.getNodeBounds(id);
+        if (b) boxes.push(b);
+      }
+      for (const b of boxes) {
+        const yOverlap = p.y - fp.halfD < b.max.y && p.y + fp.halfD > b.min.y;
+        if (yOverlap) {
+          if (Math.abs(p.x - fp.halfW - b.max.x) <= MAGNET_RANGE) p.x = b.max.x + fp.halfW;
+          else if (Math.abs(p.x + fp.halfW - b.min.x) <= MAGNET_RANGE) p.x = b.min.x - fp.halfW;
+        }
+        const xOverlap = p.x - fp.halfW < b.max.x && p.x + fp.halfW > b.min.x;
+        if (xOverlap) {
+          if (Math.abs(p.y - fp.halfD - b.max.y) <= MAGNET_RANGE) p.y = b.max.y + fp.halfD;
+          else if (Math.abs(p.y + fp.halfD - b.min.y) <= MAGNET_RANGE) p.y = b.min.y - fp.halfD;
+        }
+      }
+      placementState.quaternion.identity();
+      placementState.position.set(p.x, p.y, fp.bottom);
+      placementState.valid = true;
     };
 
     sceneApi.readNodeTransform = (id) => {
@@ -212,6 +310,7 @@ export function SceneRig() {
       sceneApi.hitNodeAt = () => null;
       sceneApi.cruiseMove = () => {};
       sceneApi.readNodeTransform = () => null;
+      sceneApi.placementMove = () => {};
     };
   }, [camera, controls, gl, scene]);
 

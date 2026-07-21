@@ -4,6 +4,7 @@ import type { ThreeEvent } from "@react-three/fiber";
 import type { ShapeNode } from "../types/scene";
 import { buildGeometry } from "../lib/primitives";
 import { workplaneFromHit } from "../lib/workplane";
+import { gizmoState } from "../lib/gizmoState";
 import { useScene } from "../state/store";
 
 // Shared by shapes and groups: while the workplane tool is armed, a click on
@@ -11,6 +12,8 @@ import { useScene } from "../state/store";
 export function handleMeshClick(e: ThreeEvent<MouseEvent>, nodeId: string) {
   e.stopPropagation();
   const s = useScene.getState();
+  // A placement commit on top of this mesh also produces a click here.
+  if (s.placing || performance.now() - gizmoState.lastInteractionEnd < 300) return;
   if (s.workplaneArmed) {
     if (e.face) {
       const normal = e.face.normal

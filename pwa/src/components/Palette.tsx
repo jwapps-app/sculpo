@@ -21,7 +21,8 @@ const KINDS: { kind: PrimitiveKind; label: string }[] = [
 ];
 
 export function Palette() {
-  const addShape = useScene((s) => s.addShape);
+  const setPlacing = useScene((s) => s.setPlacing);
+  const placing = useScene((s) => s.placing);
 
   return (
     <div className="flex w-32 flex-col gap-2 overflow-y-auto border-r border-neutral-200 bg-white p-3">
@@ -32,15 +33,19 @@ export function Palette() {
         {KINDS.map(({ kind, label }) => (
           <button
             key={kind}
-            onClick={() => addShape(kind)}
+            onClick={() => setPlacing(placing === kind ? null : kind)}
             draggable
             onDragStart={(e) => {
               e.dataTransfer.setData(SHAPE_DRAG_TYPE, kind);
               e.dataTransfer.effectAllowed = "copy";
             }}
-            title={label}
+            title={`${label} — click, then click in the scene to place`}
             aria-label={label}
-            className="flex aspect-square cursor-grab items-center justify-center rounded-md border border-neutral-200 hover:border-neutral-300 hover:bg-neutral-100 active:bg-neutral-200"
+            className={`flex aspect-square cursor-grab items-center justify-center rounded-md border hover:bg-neutral-100 active:bg-neutral-200 ${
+              placing === kind
+                ? "border-blue-500 bg-blue-50"
+                : "border-neutral-200 hover:border-neutral-300"
+            }`}
           >
             <img
               src={shapeIcon(kind)}

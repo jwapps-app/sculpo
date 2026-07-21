@@ -25,6 +25,10 @@ export const sceneApi = {
     _id: string,
   ): { position: [number, number, number]; rotation: [number, number, number]; scale: [number, number, number] } | null =>
     null,
+  // Updates placementState for the shape kind currently being placed: glides
+  // over other shapes' faces, else the floor/workplane, with magnetic
+  // edge-snapping against neighbors.
+  placementMove: (_clientX: number, _clientY: number): void => {},
 };
 
 declare global {
