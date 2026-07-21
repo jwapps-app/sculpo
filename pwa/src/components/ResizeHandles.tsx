@@ -108,8 +108,8 @@ export function ResizeHandles() {
       if (!mesh) continue;
       handlePosition(def, box, pos);
       mesh.position.copy(pos);
-      const s = camera.position.distanceTo(pos) * 0.016;
-      mesh.scale.setScalar(Math.max(s, 0.5));
+      const s = camera.position.distanceTo(pos) * 0.011;
+      mesh.scale.setScalar(Math.max(s, 0.4));
     }
   });
 
@@ -278,7 +278,7 @@ export function ResizeHandles() {
           <boxGeometry args={[1, 1, 1]} />
           <meshBasicMaterial color={IDLE_COLOR} depthTest={false} toneMapped={false} />
           <lineSegments geometry={HANDLE_EDGES} renderOrder={1000}>
-            <lineBasicMaterial color="#4a4a4a" depthTest={false} toneMapped={false} />
+            <lineBasicMaterial color="#000000" depthTest={false} toneMapped={false} />
           </lineSegments>
         </mesh>
       ))}
