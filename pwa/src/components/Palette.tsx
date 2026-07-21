@@ -1,6 +1,7 @@
 import type { PrimitiveKind } from "../types/scene";
 import { PALETTE_COLORS } from "../lib/primitives";
 import { useScene } from "../state/store";
+import { SHAPE_DRAG_TYPE } from "./Viewport";
 
 const KINDS: { kind: PrimitiveKind; label: string }[] = [
   { kind: "box", label: "Box" },
@@ -8,6 +9,7 @@ const KINDS: { kind: PrimitiveKind; label: string }[] = [
   { kind: "sphere", label: "Sphere" },
   { kind: "cone", label: "Cone" },
   { kind: "torus", label: "Torus" },
+  { kind: "text", label: "Text" },
 ];
 
 export function Palette() {
@@ -22,7 +24,13 @@ export function Palette() {
         <button
           key={kind}
           onClick={() => addShape(kind)}
-          className="flex items-center gap-2 rounded-md border border-neutral-200 px-2 py-1.5 text-sm hover:bg-neutral-100 active:bg-neutral-200"
+          draggable
+          onDragStart={(e) => {
+            e.dataTransfer.setData(SHAPE_DRAG_TYPE, kind);
+            e.dataTransfer.effectAllowed = "copy";
+          }}
+          title="Click to add at origin, or drag onto the workplane"
+          className="flex cursor-grab items-center gap-2 rounded-md border border-neutral-200 px-2 py-1.5 text-sm hover:bg-neutral-100 active:bg-neutral-200"
         >
           <span
             className="inline-block h-3 w-3 rounded-sm"

@@ -74,12 +74,29 @@ function ShapeParams({ node }: { node: ShapeNode }) {
   const numericKeys = Object.keys(node.params).filter(
     (k) => typeof node.params[k] === "number",
   );
-  if (numericKeys.length === 0) return null;
+  const stringKeys = Object.keys(node.params).filter(
+    (k) => typeof node.params[k] === "string",
+  );
+  if (numericKeys.length === 0 && stringKeys.length === 0) return null;
   return (
     <div className="space-y-1">
       <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
         {node.kind} params (mm)
       </div>
+      {stringKeys.map((key) => (
+        <label key={key} className="flex items-center justify-between gap-2 text-sm">
+          <span className="text-neutral-500">{key}</span>
+          <input
+            type="text"
+            key={`${node.id}-${key}`}
+            defaultValue={node.params[key] as string}
+            onBlur={(e) =>
+              updateShape(node.id, { params: { ...node.params, [key]: e.target.value } })
+            }
+            className="w-28 rounded border border-neutral-300 px-1.5 py-0.5 text-sm"
+          />
+        </label>
+      ))}
       {numericKeys.map((key) => (
         <label key={key} className="flex items-center justify-between gap-2 text-sm">
           <span className="text-neutral-500">{key}</span>

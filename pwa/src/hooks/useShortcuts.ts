@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useScene, undo, redo } from "../state/store";
 import { isGroup } from "../types/scene";
+import { sceneApi } from "../lib/sceneApi";
 
 export function useShortcuts() {
   useEffect(() => {
@@ -58,6 +59,21 @@ export function useShortcuts() {
           break;
         case "escape":
           s.clearSelection();
+          break;
+        case "1":
+          sceneApi.setView("top");
+          break;
+        case "2":
+          sceneApi.setView("front");
+          break;
+        case "3":
+          sceneApi.setView("right");
+          break;
+        case "4":
+          sceneApi.setView("iso");
+          break;
+        case "f":
+          sceneApi.zoomToFit();
           break;
       }
     };

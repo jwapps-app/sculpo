@@ -1,6 +1,15 @@
 import * as THREE from "three";
+import { FontLoader, type Font } from "three/addons/loaders/FontLoader.js";
+import { TextGeometry } from "three/addons/geometries/TextGeometry.js";
 import type { PrimitiveKind, ShapeNode, Vec3 } from "../types/scene";
 import { newId } from "./id";
+import typefaceData from "../assets/fonts/helvetiker_regular.typeface.json";
+
+let font: Font | null = null;
+function getFont(): Font {
+  font ??= new FontLoader().parse(typefaceData);
+  return font;
+}
 
 // Units are millimeters. World is Z-up; three's Y-up primitives (cylinder,
 // cone) are rotated so their axis is Z.
@@ -67,10 +76,18 @@ export function buildGeometry(node: ShapeNode): THREE.BufferGeometry {
       geo = new THREE.TorusGeometry(num(p, "r", 10), num(p, "tube", 4), Math.max(3, Math.ceil(s / 2)), s);
       break;
     }
-    case "text":
-      // Text needs a font loader; deferred per spec. Placeholder box for now.
-      geo = new THREE.BoxGeometry(num(p, "size", 10) * 3, num(p, "size", 10), num(p, "depth", 5));
+    case "text": {
+      const value = String(p.value ?? "").trim() || "Text";
+      // Lies flat in the XY plane, extruded up along Z, centered on its origin.
+      geo = new TextGeometry(value, {
+        font: getFont(),
+        size: num(p, "size", 10),
+        depth: num(p, "depth", 5),
+        curveSegments: 4,
+      });
+      geo.center();
       break;
+    }
   }
   return geo;
 }
