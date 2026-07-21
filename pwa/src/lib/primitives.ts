@@ -236,15 +236,31 @@ export function buildGeometry(node: ShapeNode): THREE.BufferGeometry | null {
   return geo;
 }
 
-// Distance from the shape's origin down to its lowest point, so a freshly
-// dropped shape rests on the workplane. Derived from the actual geometry.
-export function bottomOffset(kind: PrimitiveKind, params: Record<string, number | string>): number {
+export interface Footprint {
+  halfW: number;
+  halfD: number;
+  bottom: number; // distance from origin down to the lowest point
+}
+
+// Derived from the actual geometry: XY half-extents (for finding a free spot
+// on the plane) and the drop offset that rests the shape on the workplane.
+export function footprint(
+  kind: PrimitiveKind,
+  params: Record<string, number | string>,
+): Footprint {
   const geo = buildGeometry({ kind, params } as ShapeNode);
-  if (!geo) return 0;
+  if (!geo) return { halfW: 10, halfD: 10, bottom: 0 };
   geo.computeBoundingBox();
-  const offset = geo.boundingBox ? -geo.boundingBox.min.z : 0;
+  const b = geo.boundingBox;
+  const result = b
+    ? { halfW: (b.max.x - b.min.x) / 2, halfD: (b.max.y - b.min.y) / 2, bottom: -b.min.z }
+    : { halfW: 10, halfD: 10, bottom: 0 };
   geo.dispose();
-  return offset;
+  return result;
+}
+
+export function bottomOffset(kind: PrimitiveKind, params: Record<string, number | string>): number {
+  return footprint(kind, params).bottom;
 }
 
 export function makeShape(kind: PrimitiveKind): ShapeNode {

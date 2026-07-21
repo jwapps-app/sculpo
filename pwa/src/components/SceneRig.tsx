@@ -148,6 +148,60 @@ export function SceneRig() {
       return picked;
     };
 
+    sceneApi.hitNodeAt = (clientX, clientY) => {
+      const raycaster = new THREE.Raycaster();
+      raycaster.setFromCamera(clientToNdc(clientX, clientY), camera);
+      const hits = raycaster.intersectObjects(nodeMeshes(), false);
+      return hits.length > 0 ? (hits[0].object.userData.nodeId as string) : null;
+    };
+
+    sceneApi.cruiseMove = (id, clientX, clientY) => {
+      const obj = findNodeObject(id);
+      if (!obj) return;
+      const raycaster = new THREE.Raycaster();
+      raycaster.setFromCamera(clientToNdc(clientX, clientY), camera);
+      const others = nodeMeshes().filter((o) => o.userData.nodeId !== id);
+      const hit = raycaster.intersectObjects(others, false).find((h) => h.face);
+
+      const geo = (obj as THREE.Mesh).geometry;
+      geo.computeBoundingBox();
+      const bottom = geo.boundingBox ? -geo.boundingBox.min.z * obj.scale.z : 0;
+      const s = useScene.getState();
+
+      if (hit && hit.face) {
+        // Glide along the face: seat the shape's bottom on the surface,
+        // oriented to the face normal.
+        const normal = hit.face.normal.clone().transformDirection(hit.object.matrixWorld).normalize();
+        obj.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
+        obj.position.copy(hit.point).addScaledVector(normal, bottom);
+      } else {
+        // Back on the floor: upright, resting on the plane.
+        const p = new THREE.Vector3();
+        if (
+          !raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 0, 1), 0), p)
+        ) {
+          return;
+        }
+        if (s.snap) {
+          p.x = Math.round(p.x / s.snapStep) * s.snapStep;
+          p.y = Math.round(p.y / s.snapStep) * s.snapStep;
+        }
+        obj.rotation.set(0, 0, 0);
+        obj.position.set(p.x, p.y, bottom);
+      }
+      obj.updateMatrixWorld(true);
+    };
+
+    sceneApi.readNodeTransform = (id) => {
+      const obj = findNodeObject(id);
+      if (!obj) return null;
+      return {
+        position: obj.position.toArray() as [number, number, number],
+        rotation: [obj.rotation.x, obj.rotation.y, obj.rotation.z],
+        scale: obj.scale.toArray() as [number, number, number],
+      };
+    };
+
     return () => {
       sceneApi.setView = () => {};
       sceneApi.zoomToFit = () => {};
@@ -155,6 +209,9 @@ export function SceneRig() {
       sceneApi.getNodeBounds = () => null;
       sceneApi.hitTestNodes = () => false;
       sceneApi.pickInRect = () => [];
+      sceneApi.hitNodeAt = () => null;
+      sceneApi.cruiseMove = () => {};
+      sceneApi.readNodeTransform = () => null;
     };
   }, [camera, controls, gl, scene]);
 

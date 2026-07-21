@@ -15,4 +15,21 @@ export const sceneApi = {
   hitTestNodes: (_clientX: number, _clientY: number): boolean => false,
   // Top-level node ids whose bounds-center projects inside the client-px rect.
   pickInRect: (_x1: number, _y1: number, _x2: number, _y2: number): string[] => [],
+  // Topmost node under the pointer, or null.
+  hitNodeAt: (_clientX: number, _clientY: number): string | null => null,
+  // Cruise: glide a node along whatever surface is under the pointer (other
+  // shapes' faces, else the floor). Mutates the scene object only; call
+  // readNodeTransform to commit.
+  cruiseMove: (_id: string, _clientX: number, _clientY: number): void => {},
+  readNodeTransform: (
+    _id: string,
+  ): { position: [number, number, number]; rotation: [number, number, number]; scale: [number, number, number] } | null =>
+    null,
 };
+
+declare global {
+  interface Window {
+    __sceneApi?: typeof sceneApi;
+  }
+}
+if (import.meta.env.DEV) window.__sceneApi = sceneApi;

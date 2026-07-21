@@ -206,18 +206,35 @@ export function Viewport() {
   // marquee yet. Capturing here would swallow the browser's click event (and
   // with it click-to-deselect), so capture only once dragging actually starts.
   const pendingMarquee = useRef<{ x: number; y: number } | null>(null);
+  const cruiseDrag = useRef<string | null>(null);
   const wrapper = useRef<HTMLDivElement>(null);
+  const cruiseMode = useScene((s) => s.cruiseMode);
 
   const onPointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
     if (!(e.target instanceof HTMLCanvasElement)) return;
-    if (useScene.getState().workplaneArmed) return;
+    const s = useScene.getState();
+    if (s.workplaneArmed) return;
     if (gizmoState.busy()) return;
+    if (s.cruiseMode && !s.editingGroupId) {
+      const id = sceneApi.hitNodeAt(e.clientX, e.clientY);
+      if (id && s.project.nodes[id] && !s.project.nodes[id].locked) {
+        s.setSelection([id]);
+        cruiseDrag.current = id;
+        gizmoState.handleActive = true;
+        wrapper.current?.setPointerCapture(e.pointerId);
+        return;
+      }
+    }
     if (sceneApi.hitTestNodes(e.clientX, e.clientY)) return;
     pendingMarquee.current = { x: e.clientX, y: e.clientY };
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
+    if (cruiseDrag.current) {
+      sceneApi.cruiseMove(cruiseDrag.current, e.clientX, e.clientY);
+      return;
+    }
     const pending = pendingMarquee.current;
     if (pending && !marquee) {
       if (Math.abs(e.clientX - pending.x) >= 4 || Math.abs(e.clientY - pending.y) >= 4) {
@@ -231,6 +248,16 @@ export function Viewport() {
 
   const onPointerUp = (e: React.PointerEvent) => {
     pendingMarquee.current = null;
+    if (cruiseDrag.current) {
+      const id = cruiseDrag.current;
+      cruiseDrag.current = null;
+      gizmoState.handleActive = false;
+      gizmoState.lastInteractionEnd = performance.now();
+      wrapper.current?.releasePointerCapture(e.pointerId);
+      const t = sceneApi.readNodeTransform(id);
+      if (t) useScene.getState().setTransform(id, t.position, t.rotation, t.scale);
+      return;
+    }
     if (!marquee) return;
     wrapper.current?.releasePointerCapture(e.pointerId);
     const { x1, y1, x2, y2 } = marquee;
@@ -364,6 +391,11 @@ export function Viewport() {
       {workplaneArmed && (
         <div className="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 rounded bg-neutral-800/90 px-3 py-1 text-xs text-white">
           Click a face to set the workplane — click empty space to reset
+        </div>
+      )}
+      {cruiseMode && !workplaneArmed && (
+        <div className="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 rounded bg-neutral-800/90 px-3 py-1 text-xs text-white">
+          Cruise: drag a shape along other surfaces — C or Esc to exit
         </div>
       )}
       {editingGroup && (

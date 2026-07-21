@@ -3,7 +3,7 @@ import { temporal } from "zundo";
 import * as THREE from "three";
 import type { GroupNode, PrimitiveKind, Project, SceneNode, ShapeNode, Vec3 } from "../types/scene";
 import { emptyProject, isGroup } from "../types/scene";
-import { bottomOffset, makeShape } from "../lib/primitives";
+import { bottomOffset, footprint, makeShape } from "../lib/primitives";
 import { newId } from "../lib/id";
 import { composeMatrix, decomposeMatrix } from "../lib/transform";
 import { workplaneNormal, type Workplane } from "../lib/workplane";
@@ -57,6 +57,38 @@ function cloneSubtree(
   return cloned.id;
 }
 
+// Spiral outward from the origin until the shape's footprint doesn't overlap
+// any existing object — new shapes must never land on top of existing work.
+function findFreeSpot(halfW: number, halfD: number, ids: string[]): [number, number] {
+  const margin = 5;
+  const boxes: THREE.Box3[] = [];
+  for (const id of ids) {
+    const b = sceneApi.getNodeBounds(id);
+    if (b) boxes.push(b);
+  }
+  const clear = (x: number, y: number) =>
+    boxes.every(
+      (b) =>
+        x + halfW + margin <= b.min.x ||
+        x - halfW - margin >= b.max.x ||
+        y + halfD + margin <= b.min.y ||
+        y - halfD - margin >= b.max.y,
+    );
+  if (clear(0, 0)) return [0, 0];
+  const step = Math.max(halfW, halfD) * 2 + 10;
+  for (let ring = 1; ring <= 6; ring++) {
+    for (let i = -ring; i <= ring; i++) {
+      for (let j = -ring; j <= ring; j++) {
+        if (Math.max(Math.abs(i), Math.abs(j)) !== ring) continue;
+        const x = i * step;
+        const y = j * step;
+        if (clear(x, y)) return [x, y];
+      }
+    }
+  }
+  return [0, 0];
+}
+
 // Min/center/max of a world AABB along one axis.
 function boundsValue(box: THREE.Box3, axis: Axis, mode: AlignMode): number {
   const min = box.min.getComponent(axis);
@@ -83,6 +115,7 @@ interface SceneState {
   editingGroupId: string | null;
   ortho: boolean;
   smartDup: SmartDup | null;
+  cruiseMode: boolean;
 
   addShape: (kind: PrimitiveKind, placement?: Placement) => void;
   addImportedMesh: (params: Record<string, string>, name: string) => void;
@@ -115,6 +148,7 @@ interface SceneState {
   setWorkplaneArmed: (armed: boolean) => void;
   setDragInfo: (info: string | null) => void;
   setOrtho: (ortho: boolean) => void;
+  setCruiseMode: (on: boolean) => void;
 }
 
 export const useScene = create<SceneState>()(
@@ -131,6 +165,7 @@ export const useScene = create<SceneState>()(
       editingGroupId: null,
       ortho: false,
       smartDup: null,
+      cruiseMode: false,
 
       addShape: (kind, placement) => {
         const shape = makeShape(kind);
@@ -151,6 +186,10 @@ export const useScene = create<SceneState>()(
             place.position[2] + n.z * h,
           ];
           shape.rotation = [...place.rotation];
+        } else {
+          const fp = footprint(kind, shape.params);
+          const [fx, fy] = findFreeSpot(fp.halfW, fp.halfD, s.project.rootOrder);
+          shape.position = [fx, fy, shape.position[2]];
         }
         set((st) => {
           // Inside edit-in-place, new shapes join the group being edited.
@@ -569,6 +608,8 @@ export const useScene = create<SceneState>()(
       setWorkplaneArmed: (armed) => set({ workplaneArmed: armed }),
       setDragInfo: (info) => set({ dragInfo: info }),
       setOrtho: (ortho) => set({ ortho }),
+      setCruiseMode: (on) =>
+        set({ cruiseMode: on, ...(on ? { workplaneArmed: false } : {}) }),
     }),
     {
       // Only the scene graph participates in undo history; selection and UI

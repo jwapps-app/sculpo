@@ -68,6 +68,9 @@ export function useShortcuts() {
         case "w":
           s.setWorkplaneArmed(!s.workplaneArmed);
           break;
+        case "c":
+          s.setCruiseMode(!s.cruiseMode);
+          break;
         case "d":
           s.dropSelectedToWorkplane();
           break;
@@ -104,6 +107,7 @@ export function useShortcuts() {
           break;
         case "escape":
           if (s.workplaneArmed) s.setWorkplaneArmed(false);
+          else if (s.cruiseMode) s.setCruiseMode(false);
           else if (s.editingGroupId) s.setEditingGroup(null);
           else s.clearSelection();
           break;

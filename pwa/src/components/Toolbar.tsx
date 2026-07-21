@@ -8,6 +8,7 @@ import {
   FlipHorizontal2,
   FolderOpen,
   Group as GroupIcon,
+  Hand,
   Layers,
   Lock,
   LockOpen,
@@ -98,6 +99,8 @@ export function Toolbar() {
   const workplaneArmed = useScene((s) => s.workplaneArmed);
   const workplaneSet = useScene((s) => s.workplane !== null);
   const setWorkplaneArmed = useScene((s) => s.setWorkplaneArmed);
+  const cruiseMode = useScene((s) => s.cruiseMode);
+  const setCruiseMode = useScene((s) => s.setCruiseMode);
   const selection = useScene((s) => s.selection);
   const nodes = useScene((s) => s.project.nodes);
   const projectId = useScene((s) => s.project.id);
@@ -190,6 +193,12 @@ export function Toolbar() {
         active={workplaneArmed || workplaneSet}
         onClick={() => setWorkplaneArmed(!workplaneArmed)}
         label="Workplane (W) — click a face to build on it; empty space resets"
+      />
+      <IconButton
+        icon={Hand}
+        active={cruiseMode}
+        onClick={() => setCruiseMode(!cruiseMode)}
+        label="Cruise (C) — drag a shape along other surfaces to place it"
       />
 
       <Divider />
