@@ -202,6 +202,10 @@ export function Viewport() {
 
   const [marquee, setMarquee] = useState<MarqueeRect | null>(null);
   const marqueeEndedAt = useRef(0);
+  // A pointer that went down on empty canvas but hasn't moved enough to be a
+  // marquee yet. Capturing here would swallow the browser's click event (and
+  // with it click-to-deselect), so capture only once dragging actually starts.
+  const pendingMarquee = useRef<{ x: number; y: number } | null>(null);
   const wrapper = useRef<HTMLDivElement>(null);
 
   const onPointerDown = (e: React.PointerEvent) => {
@@ -210,20 +214,27 @@ export function Viewport() {
     if (useScene.getState().workplaneArmed) return;
     if (gizmoState.busy()) return;
     if (sceneApi.hitTestNodes(e.clientX, e.clientY)) return;
-    setMarquee({ x1: e.clientX, y1: e.clientY, x2: e.clientX, y2: e.clientY });
-    wrapper.current?.setPointerCapture(e.pointerId);
+    pendingMarquee.current = { x: e.clientX, y: e.clientY };
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
+    const pending = pendingMarquee.current;
+    if (pending && !marquee) {
+      if (Math.abs(e.clientX - pending.x) >= 4 || Math.abs(e.clientY - pending.y) >= 4) {
+        setMarquee({ x1: pending.x, y1: pending.y, x2: e.clientX, y2: e.clientY });
+        wrapper.current?.setPointerCapture(e.pointerId);
+      }
+      return;
+    }
     setMarquee((m) => (m ? { ...m, x2: e.clientX, y2: e.clientY } : m));
   };
 
   const onPointerUp = (e: React.PointerEvent) => {
+    pendingMarquee.current = null;
     if (!marquee) return;
     wrapper.current?.releasePointerCapture(e.pointerId);
     const { x1, y1, x2, y2 } = marquee;
     setMarquee(null);
-    if (Math.abs(x2 - x1) < 4 && Math.abs(y2 - y1) < 4) return; // plain click
     marqueeEndedAt.current = performance.now();
     const picked = sceneApi.pickInRect(x1, y1, x2, y2);
     const s = useScene.getState();
@@ -269,7 +280,10 @@ export function Viewport() {
       }}
     >
       <Canvas
-        onPointerMissed={() => {
+        onPointerMissed={(e) => {
+          // Only a plain left-click on empty canvas deselects. Orbiting ends
+          // with a contextmenu/right-button event that also lands here.
+          if (e.type !== "click" || e.button !== 0) return;
           // A finished marquee or handle drag also ends with a click on empty
           // canvas — don't let that wipe the selection it just made.
           if (performance.now() - marqueeEndedAt.current < 300) return;
