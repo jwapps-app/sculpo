@@ -31,7 +31,7 @@ export function Gizmo() {
   const drag = useRef<DragState | null>(null);
 
   const ids = useMemo(
-    () => selection.filter((id) => nodes[id]),
+    () => selection.filter((id) => nodes[id] && !nodes[id].locked),
     [selection, nodes],
   );
 
@@ -98,7 +98,13 @@ export function Gizmo() {
       .multiply(d.pivotStart.clone().invert());
     const m = new THREE.Matrix4();
     for (const { obj, start } of d.objects) {
+      // delta and start are world matrices; convert back into the object's
+      // parent frame (non-identity while editing a group in place).
       m.copy(delta).multiply(start);
+      if (obj.parent) {
+        obj.parent.updateWorldMatrix(true, false);
+        m.premultiply(obj.parent.matrixWorld.clone().invert());
+      }
       m.decompose(obj.position, obj.quaternion, obj.scale);
     }
     const fmt = (v: THREE.Vector3, digits = 1) =>

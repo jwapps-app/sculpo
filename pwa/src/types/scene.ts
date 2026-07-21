@@ -8,7 +8,15 @@ export type PrimitiveKind =
   | "sphere"
   | "cone"
   | "torus"
-  | "text";
+  | "text"
+  | "wedge"
+  | "roof"
+  | "pyramid"
+  | "hemisphere"
+  | "polygon"
+  | "tube"
+  | "star"
+  | "mesh"; // imported STL/OBJ/SVG geometry, stored in params
 
 export interface ShapeNode {
   id: string;
@@ -19,6 +27,8 @@ export interface ShapeNode {
   scale: Vec3;
   role: "solid" | "hole";
   color: string; // hex, display only
+  locked?: boolean;
+  hidden?: boolean;
 }
 
 export interface GroupNode {
@@ -30,6 +40,8 @@ export interface GroupNode {
   position: Vec3;
   rotation: Vec3;
   scale: Vec3;
+  locked?: boolean;
+  hidden?: boolean;
 }
 
 export type SceneNode = ShapeNode | GroupNode;

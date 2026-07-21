@@ -9,6 +9,13 @@ const KINDS: { kind: PrimitiveKind; label: string }[] = [
   { kind: "sphere", label: "Sphere" },
   { kind: "cone", label: "Cone" },
   { kind: "torus", label: "Torus" },
+  { kind: "wedge", label: "Wedge" },
+  { kind: "roof", label: "Roof" },
+  { kind: "pyramid", label: "Pyramid" },
+  { kind: "hemisphere", label: "Half Sphere" },
+  { kind: "polygon", label: "Polygon" },
+  { kind: "tube", label: "Tube" },
+  { kind: "star", label: "Star" },
   { kind: "text", label: "Text" },
 ];
 
@@ -16,7 +23,7 @@ export function Palette() {
   const addShape = useScene((s) => s.addShape);
 
   return (
-    <div className="flex w-32 flex-col gap-2 border-r border-neutral-200 bg-white p-3">
+    <div className="flex w-32 flex-col gap-2 overflow-y-auto border-r border-neutral-200 bg-white p-3">
       <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
         Shapes
       </div>

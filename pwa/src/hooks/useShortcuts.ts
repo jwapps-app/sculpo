@@ -104,6 +104,7 @@ export function useShortcuts() {
           break;
         case "escape":
           if (s.workplaneArmed) s.setWorkplaneArmed(false);
+          else if (s.editingGroupId) s.setEditingGroup(null);
           else s.clearSelection();
           break;
         case "1":

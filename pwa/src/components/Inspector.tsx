@@ -69,13 +69,16 @@ function VecFields({
   );
 }
 
+// Params that hold encoded mesh data, not user-editable values.
+const HIDDEN_PARAMS = new Set(["pos", "idx"]);
+
 function ShapeParams({ node }: { node: ShapeNode }) {
   const updateShape = useScene((s) => s.updateShape);
   const numericKeys = Object.keys(node.params).filter(
-    (k) => typeof node.params[k] === "number",
+    (k) => typeof node.params[k] === "number" && !HIDDEN_PARAMS.has(k),
   );
   const stringKeys = Object.keys(node.params).filter(
-    (k) => typeof node.params[k] === "string",
+    (k) => typeof node.params[k] === "string" && !HIDDEN_PARAMS.has(k),
   );
   if (numericKeys.length === 0 && stringKeys.length === 0) return null;
   return (
@@ -117,6 +120,34 @@ function ShapeParams({ node }: { node: ShapeNode }) {
 }
 
 const AXES = ["X", "Y", "Z"] as const;
+
+function LockHideRow() {
+  const toggleLockSelected = useScene((s) => s.toggleLockSelected);
+  const hideSelected = useScene((s) => s.hideSelected);
+  const selection = useScene((s) => s.selection);
+  const nodes = useScene((s) => s.project.nodes);
+  const anyLocked = selection.some((id) => nodes[id]?.locked);
+  return (
+    <div className="flex gap-1">
+      <button
+        onClick={toggleLockSelected}
+        className={`flex-1 rounded border px-2 py-1 text-xs ${
+          anyLocked
+            ? "border-neutral-700 bg-neutral-800 text-white"
+            : "border-neutral-300 hover:bg-neutral-100"
+        }`}
+      >
+        {anyLocked ? "Unlock" : "Lock"}
+      </button>
+      <button
+        onClick={hideSelected}
+        className="flex-1 rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100"
+      >
+        Hide
+      </button>
+    </div>
+  );
+}
 
 function FlipRow() {
   const mirrorSelected = useScene((s) => s.mirrorSelected);
@@ -194,6 +225,7 @@ export function Inspector() {
         </div>
         <AlignPanel />
         <FlipRow />
+        <LockHideRow />
       </div>
     );
   }
@@ -225,8 +257,9 @@ export function Inspector() {
           onCommit={(v) => setTransform(group.id, group.position, group.rotation, v)}
         />
         <FlipRow />
+        <LockHideRow />
         <p className="text-xs text-neutral-400">
-          Ungroup (⇧⌘G) to edit the shapes inside.
+          Double-click to edit the shapes inside; ⇧⌘G to ungroup.
         </p>
       </div>
     );
@@ -286,6 +319,7 @@ export function Inspector() {
       />
       <ShapeParams node={node} />
       <FlipRow />
+      <LockHideRow />
     </div>
   );
 }

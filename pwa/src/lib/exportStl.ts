@@ -22,7 +22,7 @@ export function exportSceneStl(project: Project): ExportResult {
 
   for (const id of project.rootOrder) {
     const node = project.nodes[id];
-    if (!node) continue;
+    if (!node || node.hidden) continue;
 
     let geometry: THREE.BufferGeometry | null;
     if (isGroup(node)) {

@@ -26,7 +26,7 @@ export function bakeTransform(
   return g;
 }
 
-function flipWinding(g: THREE.BufferGeometry) {
+export function flipWinding(g: THREE.BufferGeometry) {
   if (g.index) {
     const arr = g.index.array;
     for (let i = 0; i < arr.length; i += 3) {

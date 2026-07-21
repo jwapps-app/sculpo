@@ -5,6 +5,7 @@ import type { TransformMode } from "../state/store";
 import { isGroup } from "../types/scene";
 import { exportSceneStl } from "../lib/exportStl";
 import { saveProjectFile, parseProjectFile } from "../lib/projectFile";
+import { importMeshFile } from "../lib/importMesh";
 
 const MODES: { mode: TransformMode; label: string; key: string }[] = [
   { mode: "translate", label: "Move", key: "G" },
@@ -65,8 +66,15 @@ export function Toolbar() {
   const ungroupSelected = useScene((s) => s.ungroupSelected);
   const setProjectName = useScene((s) => s.setProjectName);
   const loadProject = useScene((s) => s.loadProject);
+  const newProject = useScene((s) => s.newProject);
+  const showAll = useScene((s) => s.showAll);
+  const addImportedMesh = useScene((s) => s.addImportedMesh);
+  const anyHidden = useScene((s) =>
+    Object.values(s.project.nodes).some((n) => n.hidden),
+  );
 
   const fileInput = useRef<HTMLInputElement>(null);
+  const importInput = useRef<HTMLInputElement>(null);
 
   const hasSelection = selection.length > 0;
   const canGroup = selection.length >= 2;
@@ -166,8 +174,31 @@ export function Toolbar() {
         Delete
       </ToolButton>
 
+      <ToolButton onClick={showAll} disabled={!anyHidden} title="Unhide every hidden object">
+        Show All
+      </ToolButton>
+
       <div className="flex-1" />
 
+      <ToolButton
+        onClick={() => {
+          if (
+            useScene.getState().project.rootOrder.length === 0 ||
+            confirm("Start a new project? Unsaved changes will be lost.")
+          ) {
+            newProject();
+          }
+        }}
+        title="Start an empty project"
+      >
+        New
+      </ToolButton>
+      <ToolButton
+        onClick={() => importInput.current?.click()}
+        title="Import an STL, OBJ, or SVG as a shape"
+      >
+        Import
+      </ToolButton>
       <ToolButton onClick={() => fileInput.current?.click()} title="Open a saved project file">
         Open
       </ToolButton>
@@ -193,6 +224,23 @@ export function Toolbar() {
           const file = e.target.files?.[0];
           if (file) onOpenFile(file);
           e.target.value = "";
+        }}
+      />
+      <input
+        ref={importInput}
+        type="file"
+        accept=".stl,.obj,.svg"
+        className="hidden"
+        onChange={async (e) => {
+          const file = e.target.files?.[0];
+          e.target.value = "";
+          if (!file) return;
+          try {
+            const { params, name } = await importMeshFile(file);
+            addImportedMesh(params, name);
+          } catch (err) {
+            alert(err instanceof Error ? err.message : "Could not import the file.");
+          }
         }}
       />
     </div>

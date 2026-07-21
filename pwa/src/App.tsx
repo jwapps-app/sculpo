@@ -3,9 +3,11 @@ import { Palette } from "./components/Palette";
 import { Viewport } from "./components/Viewport";
 import { Inspector } from "./components/Inspector";
 import { useShortcuts } from "./hooks/useShortcuts";
+import { useAutosave } from "./hooks/useAutosave";
 
 export default function App() {
   useShortcuts();
+  useAutosave();
   return (
     <div className="flex h-screen flex-col">
       <Toolbar />

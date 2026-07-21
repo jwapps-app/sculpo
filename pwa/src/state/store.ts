@@ -3,7 +3,7 @@ import { temporal } from "zundo";
 import * as THREE from "three";
 import type { GroupNode, PrimitiveKind, Project, SceneNode, ShapeNode, Vec3 } from "../types/scene";
 import { emptyProject, isGroup } from "../types/scene";
-import { dropHeight, makeShape } from "../lib/primitives";
+import { bottomOffset, makeShape } from "../lib/primitives";
 import { newId } from "../lib/id";
 import { composeMatrix, decomposeMatrix } from "../lib/transform";
 import { workplaneNormal, type Workplane } from "../lib/workplane";
@@ -64,6 +64,13 @@ function boundsValue(box: THREE.Box3, axis: Axis, mode: AlignMode): number {
   return mode === "min" ? min : mode === "max" ? max : (min + max) / 2;
 }
 
+// Creation transforms of the last duplicate, keyed by copy id — pressing
+// duplicate again with those copies still selected repeats the delta the user
+// applied to them (Tinkercad's pattern-making duplicate).
+interface SmartDup {
+  transforms: Record<string, { position: Vec3; rotation: Vec3; scale: Vec3 }>;
+}
+
 interface SceneState {
   project: Project;
   selection: string[];
@@ -73,8 +80,12 @@ interface SceneState {
   workplane: Workplane | null;
   workplaneArmed: boolean;
   dragInfo: string | null;
+  editingGroupId: string | null;
+  ortho: boolean;
+  smartDup: SmartDup | null;
 
   addShape: (kind: PrimitiveKind, placement?: Placement) => void;
+  addImportedMesh: (params: Record<string, string>, name: string) => void;
   updateShape: (id: string, patch: Partial<Omit<ShapeNode, "id" | "kind">>) => void;
   setTransform: (id: string, position: Vec3, rotation: Vec3, scale: Vec3) => void;
   setTransforms: (entries: TransformEntry[]) => void;
@@ -88,6 +99,11 @@ interface SceneState {
   ungroupSelected: () => void;
   setProjectName: (name: string) => void;
   loadProject: (project: Project) => void;
+  newProject: () => void;
+  toggleLockSelected: () => void;
+  hideSelected: () => void;
+  showAll: () => void;
+  setEditingGroup: (id: string | null) => void;
 
   setSelection: (ids: string[]) => void;
   select: (id: string, additive: boolean) => void;
@@ -98,6 +114,7 @@ interface SceneState {
   setWorkplane: (wp: Workplane | null) => void;
   setWorkplaneArmed: (armed: boolean) => void;
   setDragInfo: (info: string | null) => void;
+  setOrtho: (ortho: boolean) => void;
 }
 
 export const useScene = create<SceneState>()(
@@ -111,6 +128,9 @@ export const useScene = create<SceneState>()(
       workplane: null,
       workplaneArmed: false,
       dragInfo: null,
+      editingGroupId: null,
+      ortho: false,
+      smartDup: null,
 
       addShape: (kind, placement) => {
         const shape = makeShape(kind);
@@ -124,7 +144,7 @@ export const useScene = create<SceneState>()(
           const n = new THREE.Vector3(0, 0, 1).applyEuler(
             new THREE.Euler(...place.rotation, "XYZ"),
           );
-          const h = dropHeight(kind, shape.params);
+          const h = bottomOffset(kind, shape.params);
           shape.position = [
             place.position[0] + n.x * h,
             place.position[1] + n.y * h,
@@ -132,6 +152,37 @@ export const useScene = create<SceneState>()(
           ];
           shape.rotation = [...place.rotation];
         }
+        set((st) => {
+          // Inside edit-in-place, new shapes join the group being edited.
+          const editing = st.editingGroupId ? st.project.nodes[st.editingGroupId] : null;
+          if (editing && isGroup(editing)) {
+            return {
+              project: {
+                ...st.project,
+                nodes: {
+                  ...st.project.nodes,
+                  [shape.id]: shape,
+                  [editing.id]: { ...editing, childIds: [...editing.childIds, shape.id] },
+                },
+              },
+              selection: [shape.id],
+            };
+          }
+          return {
+            project: {
+              ...st.project,
+              nodes: { ...st.project.nodes, [shape.id]: shape },
+              rootOrder: [...st.project.rootOrder, shape.id],
+            },
+            selection: [shape.id],
+          };
+        });
+      },
+
+      addImportedMesh: (params, name) => {
+        const shape = makeShape("mesh");
+        shape.params = { ...params, name };
+        shape.position = [0, 0, bottomOffset("mesh", shape.params)];
         set((st) => ({
           project: {
             ...st.project,
@@ -171,7 +222,7 @@ export const useScene = create<SceneState>()(
 
       translateSelected: (delta) => {
         const { selection, project } = get();
-        const ids = selection.filter((id) => project.nodes[id]);
+        const ids = selection.filter((id) => project.nodes[id] && !project.nodes[id].locked);
         if (ids.length === 0) return;
         set((s) => {
           const nodes = { ...s.project.nodes };
@@ -194,7 +245,7 @@ export const useScene = create<SceneState>()(
         const { selection, project } = get();
         const items = selection
           .map((id) => ({ id, box: sceneApi.getNodeBounds(id) }))
-          .filter((x): x is { id: string; box: THREE.Box3 } => !!project.nodes[x.id] && !!x.box);
+          .filter((x): x is { id: string; box: THREE.Box3 } => !!project.nodes[x.id] && !project.nodes[x.id].locked && !!x.box);
         if (items.length < 2) return;
         const target =
           mode === "min"
@@ -220,7 +271,7 @@ export const useScene = create<SceneState>()(
         const { selection, project } = get();
         const items = selection
           .map((id) => ({ id, box: sceneApi.getNodeBounds(id) }))
-          .filter((x): x is { id: string; box: THREE.Box3 } => !!project.nodes[x.id] && !!x.box);
+          .filter((x): x is { id: string; box: THREE.Box3 } => !!project.nodes[x.id] && !project.nodes[x.id].locked && !!x.box);
         if (items.length === 0) return;
         const union = new THREE.Box3();
         for (const { box } of items) union.union(box);
@@ -253,7 +304,7 @@ export const useScene = create<SceneState>()(
         const planeD = normal.dot(planePoint);
         const items = selection
           .map((id) => ({ id, box: sceneApi.getNodeBounds(id) }))
-          .filter((x): x is { id: string; box: THREE.Box3 } => !!project.nodes[x.id] && !!x.box);
+          .filter((x): x is { id: string; box: THREE.Box3 } => !!project.nodes[x.id] && !project.nodes[x.id].locked && !!x.box);
         if (items.length === 0) return;
         set((s) => {
           const nodes = { ...s.project.nodes };
@@ -285,12 +336,19 @@ export const useScene = create<SceneState>()(
 
       deleteSelected: () => {
         const { selection, project } = get();
-        if (selection.length === 0) return;
+        const deletable = selection.filter((id) => project.nodes[id] && !project.nodes[id].locked);
+        if (deletable.length === 0) return;
         const dead = new Set<string>();
-        for (const id of selection) collectSubtree(id, project.nodes, dead);
+        for (const id of deletable) collectSubtree(id, project.nodes, dead);
         set((s) => {
           const nodes = { ...s.project.nodes };
           for (const id of dead) delete nodes[id];
+          // Strip dangling references from any surviving group.
+          for (const [id, n] of Object.entries(nodes)) {
+            if (isGroup(n) && n.childIds.some((c) => dead.has(c))) {
+              nodes[id] = { ...n, childIds: n.childIds.filter((c) => !dead.has(c)) };
+            }
+          }
           return {
             project: {
               ...s.project,
@@ -303,27 +361,72 @@ export const useScene = create<SceneState>()(
       },
 
       duplicateSelected: () => {
-        const { selection, project } = get();
-        const topLevel = selection.filter((id) => project.rootOrder.includes(id));
-        if (topLevel.length === 0) return;
+        const { selection, project, smartDup, editingGroupId } = get();
+        const editing = editingGroupId ? project.nodes[editingGroupId] : null;
+        const scope =
+          editing && isGroup(editing)
+            ? editing.childIds
+            : project.rootOrder;
+        const sources = scope.filter((id) => selection.includes(id));
+        if (sources.length === 0) return;
+
+        // Repeat-duplicate: if the current selection is exactly the copies of
+        // the previous duplicate, re-apply whatever delta the user gave them.
+        const chained =
+          smartDup &&
+          sources.length === Object.keys(smartDup.transforms).length &&
+          sources.every((id) => id in smartDup.transforms);
+
         const added: Record<string, SceneNode> = {};
         const newTopIds: string[] = [];
-        for (const id of topLevel) {
+        const nextTransforms: SmartDup["transforms"] = {};
+        for (const id of sources) {
           const newIdStr = cloneSubtree(id, project.nodes, added);
           if (!newIdStr) continue;
           const clone = added[newIdStr];
-          clone.position = [clone.position[0] + 10, clone.position[1] + 10, clone.position[2]];
+          if (chained) {
+            const src = project.nodes[id];
+            const creation = smartDup.transforms[id];
+            const delta = composeMatrix(src.position, src.rotation, src.scale).multiply(
+              composeMatrix(creation.position, creation.rotation, creation.scale).invert(),
+            );
+            const m = delta.multiply(composeMatrix(src.position, src.rotation, src.scale));
+            Object.assign(clone, decomposeMatrix(m));
+          }
+          nextTransforms[newIdStr] = {
+            position: [...clone.position],
+            rotation: [...clone.rotation],
+            scale: [...clone.scale],
+          };
           newTopIds.push(newIdStr);
         }
         if (newTopIds.length === 0) return;
-        set((s) => ({
-          project: {
-            ...s.project,
-            nodes: { ...s.project.nodes, ...added },
-            rootOrder: [...s.project.rootOrder, ...newTopIds],
-          },
-          selection: newTopIds,
-        }));
+        set((s) => {
+          if (editing && isGroup(editing)) {
+            const g = s.project.nodes[editing.id] as GroupNode;
+            return {
+              project: {
+                ...s.project,
+                nodes: {
+                  ...s.project.nodes,
+                  ...added,
+                  [g.id]: { ...g, childIds: [...g.childIds, ...newTopIds] },
+                },
+              },
+              selection: newTopIds,
+              smartDup: { transforms: nextTransforms },
+            };
+          }
+          return {
+            project: {
+              ...s.project,
+              nodes: { ...s.project.nodes, ...added },
+              rootOrder: [...s.project.rootOrder, ...newTopIds],
+            },
+            selection: newTopIds,
+            smartDup: { transforms: nextTransforms },
+          };
+        });
       },
 
       groupSelected: () => {
@@ -395,9 +498,59 @@ export const useScene = create<SceneState>()(
       setProjectName: (name) => set((s) => ({ project: { ...s.project, name } })),
 
       loadProject: (project) => {
-        set({ project, selection: [], workplane: null, workplaneArmed: false });
+        set({
+          project,
+          selection: [],
+          workplane: null,
+          workplaneArmed: false,
+          editingGroupId: null,
+          smartDup: null,
+        });
         useScene.temporal.getState().clear();
       },
+
+      newProject: () => {
+        get().loadProject(emptyProject());
+      },
+
+      toggleLockSelected: () => {
+        const { selection, project } = get();
+        const ids = selection.filter((id) => project.nodes[id]);
+        if (ids.length === 0) return;
+        const lock = ids.some((id) => !project.nodes[id].locked);
+        set((s) => {
+          const nodes = { ...s.project.nodes };
+          for (const id of ids) nodes[id] = { ...nodes[id], locked: lock };
+          return { project: { ...s.project, nodes } };
+        });
+      },
+
+      hideSelected: () => {
+        const { selection, project } = get();
+        const ids = selection.filter((id) => project.nodes[id] && !project.nodes[id].locked);
+        if (ids.length === 0) return;
+        set((s) => {
+          const nodes = { ...s.project.nodes };
+          for (const id of ids) nodes[id] = { ...nodes[id], hidden: true };
+          return { project: { ...s.project, nodes }, selection: [] };
+        });
+      },
+
+      showAll: () => {
+        set((s) => {
+          const nodes = { ...s.project.nodes };
+          let changed = false;
+          for (const [id, n] of Object.entries(nodes)) {
+            if (n.hidden) {
+              nodes[id] = { ...n, hidden: false };
+              changed = true;
+            }
+          }
+          return changed ? { project: { ...s.project, nodes } } : {};
+        });
+      },
+
+      setEditingGroup: (id) => set({ editingGroupId: id, selection: [] }),
 
       setSelection: (ids) => set({ selection: ids }),
       select: (id, additive) =>
@@ -415,6 +568,7 @@ export const useScene = create<SceneState>()(
       setWorkplane: (wp) => set({ workplane: wp, workplaneArmed: false }),
       setWorkplaneArmed: (armed) => set({ workplaneArmed: armed }),
       setDragInfo: (info) => set({ dragInfo: info }),
+      setOrtho: (ortho) => set({ ortho }),
     }),
     {
       // Only the scene graph participates in undo history; selection and UI

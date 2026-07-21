@@ -65,11 +65,21 @@ export function SceneRig() {
       if (!any) return;
       const center = box.getCenter(new THREE.Vector3());
       const size = box.getSize(new THREE.Vector3()).length();
-      const fov = (camera as THREE.PerspectiveCamera).fov;
-      const distance = Math.max(size / (2 * Math.tan(THREE.MathUtils.degToRad(fov) / 2)), 30) * 1.3;
       const dir = camera.position.clone().sub(controls.target).normalize();
-      controls.target.copy(center);
-      camera.position.copy(center).addScaledVector(dir, distance);
+      if ((camera as THREE.OrthographicCamera).isOrthographicCamera) {
+        const ortho = camera as THREE.OrthographicCamera;
+        const rect = gl.domElement.getBoundingClientRect();
+        ortho.zoom = Math.min(rect.width, rect.height) / (size * 1.3);
+        ortho.updateProjectionMatrix();
+        controls.target.copy(center);
+        camera.position.copy(center).addScaledVector(dir, 200);
+      } else {
+        const fov = (camera as THREE.PerspectiveCamera).fov;
+        const distance =
+          Math.max(size / (2 * Math.tan(THREE.MathUtils.degToRad(fov) / 2)), 30) * 1.3;
+        controls.target.copy(center);
+        camera.position.copy(center).addScaledVector(dir, distance);
+      }
       controls.update();
     };
 
@@ -119,9 +129,14 @@ export function SceneRig() {
       const [minX, maxX] = x1 < x2 ? [x1, x2] : [x2, x1];
       const [minY, maxY] = y1 < y2 ? [y1, y2] : [y2, y1];
       const rect = gl.domElement.getBoundingClientRect();
-      const rootOrder = useScene.getState().project.rootOrder;
+      const s = useScene.getState();
+      const editing = s.editingGroupId ? s.project.nodes[s.editingGroupId] : null;
+      const candidates =
+        editing && "childIds" in editing ? editing.childIds : s.project.rootOrder;
       const picked: string[] = [];
-      for (const id of rootOrder) {
+      for (const id of candidates) {
+        const node = s.project.nodes[id];
+        if (!node || node.hidden || node.locked) continue;
         const bounds = sceneApi.getNodeBounds(id);
         if (!bounds) continue;
         const center = bounds.getCenter(new THREE.Vector3()).project(camera);

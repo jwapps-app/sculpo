@@ -23,7 +23,7 @@ export function handleMeshClick(e: ThreeEvent<MouseEvent>, nodeId: string) {
   s.select(nodeId, e.shiftKey);
 }
 
-export function ShapeMesh({ node }: { node: ShapeNode }) {
+export function ShapeMesh({ node, dimmed = false }: { node: ShapeNode; dimmed?: boolean }) {
   const selected = useScene((s) => s.selection.includes(node.id));
 
   const geometry = useMemo(
@@ -32,24 +32,27 @@ export function ShapeMesh({ node }: { node: ShapeNode }) {
     [node.kind, JSON.stringify(node.params)],
   );
 
+  if (node.hidden || !geometry) return null;
+
   const isHole = node.role === "hole";
 
   return (
     <mesh
       name={node.id}
-      userData={{ nodeId: node.id }}
+      userData={dimmed ? {} : { nodeId: node.id }}
       geometry={geometry}
       position={node.position}
       rotation={node.rotation}
       scale={node.scale}
-      onClick={(e) => handleMeshClick(e, node.id)}
+      raycast={dimmed ? () => null : undefined}
+      onClick={dimmed ? undefined : (e) => handleMeshClick(e, node.id)}
     >
       <meshStandardMaterial
         color={isHole ? "#9aa0a6" : node.color}
-        transparent={isHole}
-        opacity={isHole ? 0.4 : 1}
-        emissive={selected ? "#2a6cd4" : "#000000"}
-        emissiveIntensity={selected ? 0.35 : 0}
+        transparent={isHole || dimmed}
+        opacity={dimmed ? 0.15 : isHole ? 0.4 : 1}
+        emissive={selected && !dimmed ? "#2a6cd4" : "#000000"}
+        emissiveIntensity={selected && !dimmed ? 0.35 : 0}
         roughness={0.65}
         metalness={0.05}
         side={THREE.DoubleSide}

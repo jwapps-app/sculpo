@@ -5,10 +5,12 @@ import { evaluateGroup, firstSolidColor, subtreeSignature } from "../lib/csg";
 import { useScene } from "../state/store";
 import { handleMeshClick } from "./ShapeMesh";
 
-export function GroupMesh({ node }: { node: GroupNode }) {
+export function GroupMesh({ node, dimmed = false }: { node: GroupNode; dimmed?: boolean }) {
   const selected = useScene((s) => s.selection.includes(node.id));
   const signature = useScene((s) => subtreeSignature(node, s.project.nodes));
   const nodes = useScene((s) => s.project.nodes);
+  const setEditingGroup = useScene((s) => s.setEditingGroup);
+  const isTopLevel = useScene((s) => s.project.rootOrder.includes(node.id));
 
   // Re-runs only when a descendant changes, not when the group moves.
   const geometry = useMemo(
@@ -22,22 +24,35 @@ export function GroupMesh({ node }: { node: GroupNode }) {
     [signature],
   );
 
-  if (!geometry) return null;
+  if (node.hidden || !geometry) return null;
 
   return (
     <mesh
       name={node.id}
-      userData={{ nodeId: node.id }}
+      userData={dimmed ? {} : { nodeId: node.id }}
       geometry={geometry}
       position={node.position}
       rotation={node.rotation}
       scale={node.scale}
-      onClick={(e) => handleMeshClick(e, node.id)}
+      raycast={dimmed ? () => null : undefined}
+      onClick={dimmed ? undefined : (e) => handleMeshClick(e, node.id)}
+      onDoubleClick={
+        dimmed || !isTopLevel
+          ? undefined
+          : (e) => {
+              e.stopPropagation();
+              if (!useScene.getState().workplaneArmed && !node.locked) {
+                setEditingGroup(node.id);
+              }
+            }
+      }
     >
       <meshStandardMaterial
         color={color}
-        emissive={selected ? "#2a6cd4" : "#000000"}
-        emissiveIntensity={selected ? 0.35 : 0}
+        transparent={dimmed}
+        opacity={dimmed ? 0.15 : 1}
+        emissive={selected && !dimmed ? "#2a6cd4" : "#000000"}
+        emissiveIntensity={selected && !dimmed ? 0.35 : 0}
         roughness={0.65}
         metalness={0.05}
         side={THREE.DoubleSide}
