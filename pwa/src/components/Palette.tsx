@@ -1,5 +1,5 @@
 import type { PrimitiveKind } from "../types/scene";
-import { PALETTE_COLORS } from "../lib/primitives";
+import { shapeIcon } from "../lib/shapeIcons";
 import { useScene } from "../state/store";
 import { SHAPE_DRAG_TYPE } from "./Viewport";
 
@@ -39,9 +39,11 @@ export function Palette() {
           title="Click to add at origin, or drag onto the workplane"
           className="flex cursor-grab items-center gap-2 rounded-md border border-neutral-200 px-2 py-1.5 text-sm hover:bg-neutral-100 active:bg-neutral-200"
         >
-          <span
-            className="inline-block h-3 w-3 rounded-sm"
-            style={{ backgroundColor: PALETTE_COLORS[kind] }}
+          <img
+            src={shapeIcon(kind)}
+            alt=""
+            draggable={false}
+            className="h-8 w-8 shrink-0"
           />
           {label}
         </button>
