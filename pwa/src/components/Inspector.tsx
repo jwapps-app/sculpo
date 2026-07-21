@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { AXIS_COLORS } from "../constants/ui";
 import type { ShapeNode, Vec3 } from "../types/scene";
 import { isGroup } from "../types/scene";
 import { useScene } from "../state/store";
@@ -8,15 +9,22 @@ function NumberField({
   value,
   onCommit,
   step = 1,
+  labelColor,
 }: {
   label: string;
   value: number;
   onCommit: (v: number) => void;
   step?: number;
+  labelColor?: string;
 }) {
   return (
     <label className="flex items-center justify-between gap-2 text-sm">
-      <span className="w-5 text-neutral-500">{label}</span>
+      <span
+        className={`w-5 ${labelColor ? "font-bold" : "text-neutral-500"}`}
+        style={labelColor ? { color: labelColor } : undefined}
+      >
+        {label}
+      </span>
       <input
         type="number"
         step={step}
@@ -56,6 +64,7 @@ function VecFields({
         <NumberField
           key={axis}
           label={axis}
+          labelColor={AXIS_COLORS[i]}
           step={step}
           value={toDisplay(value[i])}
           onCommit={(v) => {
@@ -161,7 +170,8 @@ function FlipRow() {
           <button
             key={axis}
             onClick={() => mirrorSelected(i as 0 | 1 | 2)}
-            className="flex-1 rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100"
+            className="flex-1 rounded border border-neutral-300 px-2 py-1 text-xs font-bold hover:bg-neutral-100"
+            style={{ color: AXIS_COLORS[i] }}
           >
             {axis}
           </button>
@@ -185,7 +195,9 @@ function AlignPanel() {
       </div>
       {AXES.map((axis, i) => (
         <div key={axis} className="flex items-center gap-1">
-          <span className="w-4 text-xs text-neutral-500">{axis}</span>
+          <span className="w-4 text-xs font-bold" style={{ color: AXIS_COLORS[i] }}>
+            {axis}
+          </span>
           {modes.map(({ mode, label }) => (
             <button
               key={mode}

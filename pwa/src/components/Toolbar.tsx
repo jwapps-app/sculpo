@@ -25,6 +25,7 @@ import {
   Ungroup as UngroupIcon,
 } from "lucide-react";
 import { APP_NAME } from "../constants/branding";
+import { AXIS_COLORS } from "../constants/ui";
 import { useScene, undo, redo } from "../state/store";
 import type { TransformMode } from "../state/store";
 import { isGroup } from "../types/scene";
@@ -228,7 +229,9 @@ export function Toolbar() {
           <Popover onClose={() => setMenu(null)}>
             {AXES.map((axis, i) => (
               <div key={axis} className="flex items-center gap-1 py-0.5">
-                <span className="w-4 text-xs text-neutral-500">{axis}</span>
+                <span className="w-4 text-xs font-bold" style={{ color: AXIS_COLORS[i] }}>
+                  {axis}
+                </span>
                 {(["min", "center", "max"] as const).map((m) => (
                   <button
                     key={m}
@@ -259,7 +262,8 @@ export function Toolbar() {
                 <button
                   key={axis}
                   onClick={() => mirrorSelected(i as 0 | 1 | 2)}
-                  className="w-10 rounded border border-neutral-300 px-1 py-1 text-xs hover:bg-neutral-100"
+                  className="w-10 rounded border border-neutral-300 px-1 py-1 text-xs font-bold hover:bg-neutral-100"
+                  style={{ color: AXIS_COLORS[i] }}
                 >
                   {axis}
                 </button>
