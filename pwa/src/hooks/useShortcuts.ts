@@ -23,6 +23,12 @@ export function useShortcuts() {
         s.duplicateSelected();
         return;
       }
+      if (mod && e.key.toLowerCase() === "g") {
+        e.preventDefault();
+        if (e.shiftKey) s.ungroupSelected();
+        else s.groupSelected();
+        return;
+      }
       if (mod) return;
 
       switch (e.key.toLowerCase()) {

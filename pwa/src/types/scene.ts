@@ -25,6 +25,11 @@ export interface GroupNode {
   id: string;
   type: "group";
   childIds: string[];
+  // Identity at creation (children keep their own transforms); lets the
+  // evaluated solid be moved as one object afterwards.
+  position: Vec3;
+  rotation: Vec3;
+  scale: Vec3;
 }
 
 export type SceneNode = ShapeNode | GroupNode;

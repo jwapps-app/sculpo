@@ -18,10 +18,7 @@ export function Gizmo() {
 
   const [target, setTarget] = useState<THREE.Object3D | null>(null);
 
-  const activeId = [...selection].reverse().find((id) => {
-    const n = nodes[id];
-    return n && !("type" in n && n.type === "group");
-  });
+  const activeId = [...selection].reverse().find((id) => nodes[id] !== undefined);
 
   useEffect(() => {
     if (!activeId) {

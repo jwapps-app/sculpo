@@ -4,6 +4,7 @@ import * as THREE from "three";
 import { useScene } from "../state/store";
 import { isGroup } from "../types/scene";
 import { ShapeMesh } from "./ShapeMesh";
+import { GroupMesh } from "./GroupMesh";
 import { Gizmo } from "./Gizmo";
 
 // CAD/STL convention: Z is up, the workplane is XY.
@@ -40,8 +41,12 @@ export function Viewport() {
 
       {rootOrder.map((id) => {
         const node = nodes[id];
-        if (!node || isGroup(node)) return null; // group rendering arrives with CSG
-        return <ShapeMesh key={id} node={node} />;
+        if (!node) return null;
+        return isGroup(node) ? (
+          <GroupMesh key={id} node={node} />
+        ) : (
+          <ShapeMesh key={id} node={node} />
+        );
       })}
 
       <Gizmo />

@@ -103,10 +103,9 @@ export function Inspector() {
   const selection = useScene((s) => s.selection);
   const nodes = useScene((s) => s.project.nodes);
   const updateShape = useScene((s) => s.updateShape);
+  const setTransform = useScene((s) => s.setTransform);
 
-  const selected = selection
-    .map((id) => nodes[id])
-    .filter((n): n is ShapeNode => !!n && !isGroup(n));
+  const selected = selection.map((id) => nodes[id]).filter((n) => !!n);
 
   if (selected.length === 0) {
     return (
@@ -119,12 +118,45 @@ export function Inspector() {
   if (selected.length > 1) {
     return (
       <div className="w-56 border-l border-neutral-200 bg-white p-3 text-sm text-neutral-500">
-        {selected.length} shapes selected
+        {selected.length} objects selected
       </div>
     );
   }
 
-  const node = selected[0];
+  if (isGroup(selected[0])) {
+    const group = selected[0];
+    return (
+      <div className="flex w-56 flex-col gap-4 overflow-y-auto border-l border-neutral-200 bg-white p-3">
+        <div className="text-sm font-semibold">
+          Group · {group.childIds.length} children
+        </div>
+        <VecFields
+          title="Position (mm)"
+          value={group.position}
+          onCommit={(v) => setTransform(group.id, v, group.rotation, group.scale)}
+        />
+        <VecFields
+          title="Rotation (°)"
+          value={group.rotation}
+          step={15}
+          toDisplay={(v) => THREE.MathUtils.radToDeg(v)}
+          fromDisplay={(v) => THREE.MathUtils.degToRad(v)}
+          onCommit={(v) => setTransform(group.id, group.position, v, group.scale)}
+        />
+        <VecFields
+          title="Scale"
+          value={group.scale}
+          step={0.1}
+          onCommit={(v) => setTransform(group.id, group.position, group.rotation, v)}
+        />
+        <p className="text-xs text-neutral-400">
+          Ungroup (⇧⌘G) to edit the shapes inside.
+        </p>
+      </div>
+    );
+  }
+
+  const node = selected[0] as ShapeNode;
 
   return (
     <div className="flex w-56 flex-col gap-4 overflow-y-auto border-l border-neutral-200 bg-white p-3">
