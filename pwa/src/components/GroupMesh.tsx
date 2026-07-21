@@ -1,11 +1,11 @@
 import { useMemo } from "react";
-import type { ThreeEvent } from "@react-three/fiber";
+import * as THREE from "three";
 import type { GroupNode } from "../types/scene";
 import { evaluateGroup, firstSolidColor, subtreeSignature } from "../lib/csg";
 import { useScene } from "../state/store";
+import { handleMeshClick } from "./ShapeMesh";
 
 export function GroupMesh({ node }: { node: GroupNode }) {
-  const select = useScene((s) => s.select);
   const selected = useScene((s) => s.selection.includes(node.id));
   const signature = useScene((s) => subtreeSignature(node, s.project.nodes));
   const nodes = useScene((s) => s.project.nodes);
@@ -24,11 +24,6 @@ export function GroupMesh({ node }: { node: GroupNode }) {
 
   if (!geometry) return null;
 
-  const onClick = (e: ThreeEvent<MouseEvent>) => {
-    e.stopPropagation();
-    select(node.id, e.shiftKey);
-  };
-
   return (
     <mesh
       name={node.id}
@@ -37,7 +32,7 @@ export function GroupMesh({ node }: { node: GroupNode }) {
       position={node.position}
       rotation={node.rotation}
       scale={node.scale}
-      onClick={onClick}
+      onClick={(e) => handleMeshClick(e, node.id)}
     >
       <meshStandardMaterial
         color={color}
@@ -45,6 +40,7 @@ export function GroupMesh({ node }: { node: GroupNode }) {
         emissiveIntensity={selected ? 0.35 : 0}
         roughness={0.65}
         metalness={0.05}
+        side={THREE.DoubleSide}
       />
     </mesh>
   );

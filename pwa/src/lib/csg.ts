@@ -3,7 +3,7 @@ import { Brush, Evaluator, ADDITION, SUBTRACTION } from "three-bvh-csg";
 import type { GroupNode, Project, ShapeNode } from "../types/scene";
 import { isGroup } from "../types/scene";
 import { buildGeometry } from "./primitives";
-import { composeMatrix } from "./transform";
+import { bakeTransform, composeMatrix } from "./transform";
 
 const evaluator = new Evaluator();
 evaluator.attributes = ["position", "normal"];
@@ -35,11 +35,12 @@ export function evaluateGroup(
     }
     if (!geo) continue;
 
-    // Bake the child's full transform (including non-uniform scale) into the
-    // geometry so the boolean runs on clean world-space meshes.
-    const baked = geo
-      .clone()
-      .applyMatrix4(composeMatrix(child.position, child.rotation, child.scale));
+    // Bake the child's full transform (including non-uniform or mirrored
+    // scale) into the geometry so the boolean runs on clean world-space meshes.
+    const baked = bakeTransform(
+      geo,
+      composeMatrix(child.position, child.rotation, child.scale),
+    );
     const brush = new Brush(baked);
     brush.updateMatrixWorld();
 

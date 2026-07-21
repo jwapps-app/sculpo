@@ -116,6 +116,60 @@ function ShapeParams({ node }: { node: ShapeNode }) {
   );
 }
 
+const AXES = ["X", "Y", "Z"] as const;
+
+function FlipRow() {
+  const mirrorSelected = useScene((s) => s.mirrorSelected);
+  return (
+    <div className="space-y-1">
+      <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+        Flip
+      </div>
+      <div className="flex gap-1">
+        {AXES.map((axis, i) => (
+          <button
+            key={axis}
+            onClick={() => mirrorSelected(i as 0 | 1 | 2)}
+            className="flex-1 rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100"
+          >
+            {axis}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AlignPanel() {
+  const alignSelected = useScene((s) => s.alignSelected);
+  const modes = [
+    { mode: "min", label: "Min" },
+    { mode: "center", label: "Mid" },
+    { mode: "max", label: "Max" },
+  ] as const;
+  return (
+    <div className="space-y-1">
+      <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+        Align
+      </div>
+      {AXES.map((axis, i) => (
+        <div key={axis} className="flex items-center gap-1">
+          <span className="w-4 text-xs text-neutral-500">{axis}</span>
+          {modes.map(({ mode, label }) => (
+            <button
+              key={mode}
+              onClick={() => alignSelected(i as 0 | 1 | 2, mode)}
+              className="flex-1 rounded border border-neutral-300 px-1 py-0.5 text-xs hover:bg-neutral-100"
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function Inspector() {
   const selection = useScene((s) => s.selection);
   const nodes = useScene((s) => s.project.nodes);
@@ -134,8 +188,12 @@ export function Inspector() {
 
   if (selected.length > 1) {
     return (
-      <div className="w-56 border-l border-neutral-200 bg-white p-3 text-sm text-neutral-500">
-        {selected.length} objects selected
+      <div className="flex w-56 flex-col gap-4 overflow-y-auto border-l border-neutral-200 bg-white p-3">
+        <div className="text-sm text-neutral-500">
+          {selected.length} objects selected
+        </div>
+        <AlignPanel />
+        <FlipRow />
       </div>
     );
   }
@@ -166,6 +224,7 @@ export function Inspector() {
           step={0.1}
           onCommit={(v) => setTransform(group.id, group.position, group.rotation, v)}
         />
+        <FlipRow />
         <p className="text-xs text-neutral-400">
           Ungroup (⇧⌘G) to edit the shapes inside.
         </p>
@@ -196,6 +255,16 @@ export function Inspector() {
         </div>
       </div>
 
+      <label className="flex items-center justify-between gap-2 text-sm">
+        <span className="text-neutral-500">Color</span>
+        <input
+          type="color"
+          value={node.color}
+          onChange={(e) => updateShape(node.id, { color: e.target.value })}
+          className="h-7 w-14 cursor-pointer rounded border border-neutral-300"
+        />
+      </label>
+
       <VecFields
         title="Position (mm)"
         value={node.position}
@@ -216,6 +285,7 @@ export function Inspector() {
         onCommit={(v) => updateShape(node.id, { scale: v })}
       />
       <ShapeParams node={node} />
+      <FlipRow />
     </div>
   );
 }

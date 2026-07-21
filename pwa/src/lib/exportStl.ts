@@ -4,6 +4,7 @@ import type { Project } from "../types/scene";
 import { isGroup } from "../types/scene";
 import { buildGeometry } from "./primitives";
 import { evaluateGroup } from "./csg";
+import { bakeTransform, composeMatrix } from "./transform";
 import { downloadBlob, safeFilename } from "./download";
 
 export interface ExportResult {
@@ -34,11 +35,13 @@ export function exportSceneStl(project: Project): ExportResult {
     }
     if (!geometry || !geometry.getAttribute("position")?.count) continue;
 
-    const mesh = new THREE.Mesh(geometry);
-    mesh.position.set(...node.position);
-    mesh.rotation.set(...node.rotation);
-    mesh.scale.set(...node.scale);
-    scene.add(mesh);
+    // Bake transforms into the geometry (rather than relying on the scene
+    // graph) so mirrored nodes keep outward-facing winding in the STL.
+    const baked = bakeTransform(
+      geometry,
+      composeMatrix(node.position, node.rotation, node.scale),
+    );
+    scene.add(new THREE.Mesh(baked));
     exported++;
   }
 

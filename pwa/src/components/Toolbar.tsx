@@ -50,6 +50,11 @@ export function Toolbar() {
   const setMode = useScene((s) => s.setTransformMode);
   const snap = useScene((s) => s.snap);
   const setSnap = useScene((s) => s.setSnap);
+  const snapStep = useScene((s) => s.snapStep);
+  const setSnapStep = useScene((s) => s.setSnapStep);
+  const workplaneArmed = useScene((s) => s.workplaneArmed);
+  const workplaneSet = useScene((s) => s.workplane !== null);
+  const setWorkplaneArmed = useScene((s) => s.setWorkplaneArmed);
   const selection = useScene((s) => s.selection);
   const nodes = useScene((s) => s.project.nodes);
   const projectId = useScene((s) => s.project.id);
@@ -110,6 +115,28 @@ export function Toolbar() {
 
       <ToolButton active={snap} onClick={() => setSnap(!snap)} title="Snap to grid">
         Snap
+      </ToolButton>
+      <select
+        value={snapStep}
+        onChange={(e) => setSnapStep(Number(e.target.value))}
+        title="Snap grid size"
+        className="rounded border border-neutral-300 px-1 py-0.5 text-xs text-neutral-600"
+      >
+        {[0.1, 0.25, 0.5, 1, 2, 5].map((v) => (
+          <option key={v} value={v}>
+            {v} mm
+          </option>
+        ))}
+      </select>
+
+      <Divider />
+
+      <ToolButton
+        active={workplaneArmed || workplaneSet}
+        onClick={() => setWorkplaneArmed(!workplaneArmed)}
+        title="Workplane (W) — click a face to build on it; place on empty space to reset"
+      >
+        Workplane
       </ToolButton>
 
       <Divider />

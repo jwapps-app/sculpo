@@ -1,12 +1,29 @@
 import { create } from "zustand";
 import { temporal } from "zundo";
+import * as THREE from "three";
 import type { GroupNode, PrimitiveKind, Project, SceneNode, ShapeNode, Vec3 } from "../types/scene";
 import { emptyProject, isGroup } from "../types/scene";
-import { makeShape } from "../lib/primitives";
+import { dropHeight, makeShape } from "../lib/primitives";
 import { newId } from "../lib/id";
 import { composeMatrix, decomposeMatrix } from "../lib/transform";
+import { workplaneNormal, type Workplane } from "../lib/workplane";
+import { sceneApi } from "../lib/sceneApi";
 
 export type TransformMode = "translate" | "rotate" | "scale";
+export type AlignMode = "min" | "center" | "max";
+export type Axis = 0 | 1 | 2;
+
+export interface Placement {
+  position: Vec3; // point on the workplane the shape rests on
+  rotation: Vec3;
+}
+
+interface TransformEntry {
+  id: string;
+  position: Vec3;
+  rotation: Vec3;
+  scale: Vec3;
+}
 
 function collectSubtree(id: string, nodes: Project["nodes"], acc: Set<string>) {
   const node = nodes[id];
@@ -40,15 +57,31 @@ function cloneSubtree(
   return cloned.id;
 }
 
+// Min/center/max of a world AABB along one axis.
+function boundsValue(box: THREE.Box3, axis: Axis, mode: AlignMode): number {
+  const min = box.min.getComponent(axis);
+  const max = box.max.getComponent(axis);
+  return mode === "min" ? min : mode === "max" ? max : (min + max) / 2;
+}
+
 interface SceneState {
   project: Project;
   selection: string[];
   transformMode: TransformMode;
   snap: boolean;
+  snapStep: number;
+  workplane: Workplane | null;
+  workplaneArmed: boolean;
+  dragInfo: string | null;
 
-  addShape: (kind: PrimitiveKind, at?: Vec3) => void;
+  addShape: (kind: PrimitiveKind, placement?: Placement) => void;
   updateShape: (id: string, patch: Partial<Omit<ShapeNode, "id" | "kind">>) => void;
   setTransform: (id: string, position: Vec3, rotation: Vec3, scale: Vec3) => void;
+  setTransforms: (entries: TransformEntry[]) => void;
+  translateSelected: (delta: Vec3) => void;
+  alignSelected: (axis: Axis, mode: AlignMode) => void;
+  mirrorSelected: (axis: Axis) => void;
+  dropSelectedToWorkplane: () => void;
   deleteSelected: () => void;
   duplicateSelected: () => void;
   groupSelected: () => void;
@@ -61,6 +94,10 @@ interface SceneState {
   clearSelection: () => void;
   setTransformMode: (mode: TransformMode) => void;
   setSnap: (snap: boolean) => void;
+  setSnapStep: (step: number) => void;
+  setWorkplane: (wp: Workplane | null) => void;
+  setWorkplaneArmed: (armed: boolean) => void;
+  setDragInfo: (info: string | null) => void;
 }
 
 export const useScene = create<SceneState>()(
@@ -70,14 +107,36 @@ export const useScene = create<SceneState>()(
       selection: [],
       transformMode: "translate",
       snap: true,
+      snapStep: 1,
+      workplane: null,
+      workplaneArmed: false,
+      dragInfo: null,
 
-      addShape: (kind, at) => {
-        const shape = makeShape(kind, at);
-        set((s) => ({
+      addShape: (kind, placement) => {
+        const shape = makeShape(kind);
+        const s = get();
+        const place =
+          placement ??
+          (s.workplane
+            ? { position: s.workplane.position, rotation: s.workplane.rotation }
+            : null);
+        if (place) {
+          const n = new THREE.Vector3(0, 0, 1).applyEuler(
+            new THREE.Euler(...place.rotation, "XYZ"),
+          );
+          const h = dropHeight(kind, shape.params);
+          shape.position = [
+            place.position[0] + n.x * h,
+            place.position[1] + n.y * h,
+            place.position[2] + n.z * h,
+          ];
+          shape.rotation = [...place.rotation];
+        }
+        set((st) => ({
           project: {
-            ...s.project,
-            nodes: { ...s.project.nodes, [shape.id]: shape },
-            rootOrder: [...s.project.rootOrder, shape.id],
+            ...st.project,
+            nodes: { ...st.project.nodes, [shape.id]: shape },
+            rootOrder: [...st.project.rootOrder, shape.id],
           },
           selection: [shape.id],
         }));
@@ -95,17 +154,133 @@ export const useScene = create<SceneState>()(
       },
 
       setTransform: (id, position, rotation, scale) => {
-        const node = get().project.nodes[id];
-        if (!node) return;
-        set((s) => ({
-          project: {
-            ...s.project,
-            nodes: {
-              ...s.project.nodes,
-              [id]: { ...node, position, rotation, scale },
-            },
-          },
-        }));
+        get().setTransforms([{ id, position, rotation, scale }]);
+      },
+
+      setTransforms: (entries) => {
+        set((s) => {
+          const nodes = { ...s.project.nodes };
+          for (const e of entries) {
+            const node = nodes[e.id];
+            if (!node) continue;
+            nodes[e.id] = { ...node, position: e.position, rotation: e.rotation, scale: e.scale };
+          }
+          return { project: { ...s.project, nodes } };
+        });
+      },
+
+      translateSelected: (delta) => {
+        const { selection, project } = get();
+        const ids = selection.filter((id) => project.nodes[id]);
+        if (ids.length === 0) return;
+        set((s) => {
+          const nodes = { ...s.project.nodes };
+          for (const id of ids) {
+            const n = nodes[id];
+            nodes[id] = {
+              ...n,
+              position: [
+                n.position[0] + delta[0],
+                n.position[1] + delta[1],
+                n.position[2] + delta[2],
+              ],
+            };
+          }
+          return { project: { ...s.project, nodes } };
+        });
+      },
+
+      alignSelected: (axis, mode) => {
+        const { selection, project } = get();
+        const items = selection
+          .map((id) => ({ id, box: sceneApi.getNodeBounds(id) }))
+          .filter((x): x is { id: string; box: THREE.Box3 } => !!project.nodes[x.id] && !!x.box);
+        if (items.length < 2) return;
+        const target =
+          mode === "min"
+            ? Math.min(...items.map((x) => boundsValue(x.box, axis, "min")))
+            : mode === "max"
+              ? Math.max(...items.map((x) => boundsValue(x.box, axis, "max")))
+              : items.reduce((sum, x) => sum + boundsValue(x.box, axis, "center"), 0) /
+                items.length;
+        set((s) => {
+          const nodes = { ...s.project.nodes };
+          for (const { id, box } of items) {
+            const n = nodes[id];
+            const shift = target - boundsValue(box, axis, mode);
+            const position = [...n.position] as Vec3;
+            position[axis] += shift;
+            nodes[id] = { ...n, position };
+          }
+          return { project: { ...s.project, nodes } };
+        });
+      },
+
+      mirrorSelected: (axis) => {
+        const { selection, project } = get();
+        const items = selection
+          .map((id) => ({ id, box: sceneApi.getNodeBounds(id) }))
+          .filter((x): x is { id: string; box: THREE.Box3 } => !!project.nodes[x.id] && !!x.box);
+        if (items.length === 0) return;
+        const union = new THREE.Box3();
+        for (const { box } of items) union.union(box);
+        const center = union.getCenter(new THREE.Vector3());
+        const reflectScale = new THREE.Vector3(1, 1, 1);
+        reflectScale.setComponent(axis, -1);
+        const reflect = new THREE.Matrix4()
+          .makeTranslation(center.x, center.y, center.z)
+          .multiply(new THREE.Matrix4().makeScale(reflectScale.x, reflectScale.y, reflectScale.z))
+          .multiply(new THREE.Matrix4().makeTranslation(-center.x, -center.y, -center.z));
+        set((s) => {
+          const nodes = { ...s.project.nodes };
+          for (const { id } of items) {
+            const n = nodes[id];
+            const m = reflect
+              .clone()
+              .multiply(composeMatrix(n.position, n.rotation, n.scale));
+            nodes[id] = { ...n, ...decomposeMatrix(m) };
+          }
+          return { project: { ...s.project, nodes } };
+        });
+      },
+
+      dropSelectedToWorkplane: () => {
+        const { selection, project, workplane } = get();
+        const normal = workplaneNormal(workplane);
+        const planePoint = workplane
+          ? new THREE.Vector3(...workplane.position)
+          : new THREE.Vector3(0, 0, 0);
+        const planeD = normal.dot(planePoint);
+        const items = selection
+          .map((id) => ({ id, box: sceneApi.getNodeBounds(id) }))
+          .filter((x): x is { id: string; box: THREE.Box3 } => !!project.nodes[x.id] && !!x.box);
+        if (items.length === 0) return;
+        set((s) => {
+          const nodes = { ...s.project.nodes };
+          const corner = new THREE.Vector3();
+          for (const { id, box } of items) {
+            let minDot = Infinity;
+            for (let i = 0; i < 8; i++) {
+              corner.set(
+                i & 1 ? box.max.x : box.min.x,
+                i & 2 ? box.max.y : box.min.y,
+                i & 4 ? box.max.z : box.min.z,
+              );
+              minDot = Math.min(minDot, normal.dot(corner));
+            }
+            const shift = planeD - minDot;
+            const n = nodes[id];
+            nodes[id] = {
+              ...n,
+              position: [
+                n.position[0] + normal.x * shift,
+                n.position[1] + normal.y * shift,
+                n.position[2] + normal.z * shift,
+              ],
+            };
+          }
+          return { project: { ...s.project, nodes } };
+        });
       },
 
       deleteSelected: () => {
@@ -217,11 +392,10 @@ export const useScene = create<SceneState>()(
         });
       },
 
-      setProjectName: (name) =>
-        set((s) => ({ project: { ...s.project, name } })),
+      setProjectName: (name) => set((s) => ({ project: { ...s.project, name } })),
 
       loadProject: (project) => {
-        set({ project, selection: [] });
+        set({ project, selection: [], workplane: null, workplaneArmed: false });
         useScene.temporal.getState().clear();
       },
 
@@ -237,6 +411,10 @@ export const useScene = create<SceneState>()(
       clearSelection: () => set({ selection: [] }),
       setTransformMode: (mode) => set({ transformMode: mode }),
       setSnap: (snap) => set({ snap }),
+      setSnapStep: (step) => set({ snapStep: step }),
+      setWorkplane: (wp) => set({ workplane: wp, workplaneArmed: false }),
+      setWorkplaneArmed: (armed) => set({ workplaneArmed: armed }),
+      setDragInfo: (info) => set({ dragInfo: info }),
     }),
     {
       // Only the scene graph participates in undo history; selection and UI
@@ -249,3 +427,10 @@ export const useScene = create<SceneState>()(
 
 export const undo = () => useScene.temporal.getState().undo();
 export const redo = () => useScene.temporal.getState().redo();
+
+declare global {
+  interface Window {
+    __scene?: typeof useScene;
+  }
+}
+if (import.meta.env.DEV) window.__scene = useScene;

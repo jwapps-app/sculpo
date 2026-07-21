@@ -1,7 +1,25 @@
 import { useEffect } from "react";
+import * as THREE from "three";
 import { useScene, undo, redo } from "../state/store";
-import { isGroup } from "../types/scene";
+import { isGroup, type Vec3 } from "../types/scene";
 import { sceneApi } from "../lib/sceneApi";
+import { workplaneNormal } from "../lib/workplane";
+
+// Arrow nudges move in the active workplane's frame; Ctrl/⌘+up/down moves
+// along its normal.
+function nudge(dx: number, dy: number, dz: number) {
+  const s = useScene.getState();
+  const step = s.snap ? s.snapStep : 0.1;
+  const e = s.workplane ? new THREE.Euler(...s.workplane.rotation, "XYZ") : null;
+  const vx = e ? new THREE.Vector3(1, 0, 0).applyEuler(e) : new THREE.Vector3(1, 0, 0);
+  const vy = e ? new THREE.Vector3(0, 1, 0).applyEuler(e) : new THREE.Vector3(0, 1, 0);
+  const vz = workplaneNormal(s.workplane);
+  const delta = new THREE.Vector3()
+    .addScaledVector(vx, dx * step)
+    .addScaledVector(vy, dy * step)
+    .addScaledVector(vz, dz * step);
+  s.translateSelected(delta.toArray() as Vec3);
+}
 
 export function useShortcuts() {
   useEffect(() => {
@@ -30,6 +48,11 @@ export function useShortcuts() {
         else s.groupSelected();
         return;
       }
+      if (mod && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+        e.preventDefault();
+        nudge(0, 0, e.key === "ArrowUp" ? 1 : -1);
+        return;
+      }
       if (mod) return;
 
       switch (e.key.toLowerCase()) {
@@ -42,6 +65,12 @@ export function useShortcuts() {
         case "s":
           s.setTransformMode("scale");
           break;
+        case "w":
+          s.setWorkplaneArmed(!s.workplaneArmed);
+          break;
+        case "d":
+          s.dropSelectedToWorkplane();
+          break;
         case "h": {
           // toggle solid/hole on selection
           for (const id of s.selection) {
@@ -52,13 +81,30 @@ export function useShortcuts() {
           }
           break;
         }
+        case "arrowleft":
+          e.preventDefault();
+          nudge(-1, 0, 0);
+          break;
+        case "arrowright":
+          e.preventDefault();
+          nudge(1, 0, 0);
+          break;
+        case "arrowup":
+          e.preventDefault();
+          nudge(0, 1, 0);
+          break;
+        case "arrowdown":
+          e.preventDefault();
+          nudge(0, -1, 0);
+          break;
         case "delete":
         case "backspace":
           e.preventDefault();
           s.deleteSelected();
           break;
         case "escape":
-          s.clearSelection();
+          if (s.workplaneArmed) s.setWorkplaneArmed(false);
+          else s.clearSelection();
           break;
         case "1":
           sceneApi.setView("top");
