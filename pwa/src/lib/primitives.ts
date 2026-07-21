@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import type { PrimitiveKind, ShapeNode, Vec3 } from "../types/scene";
+import { newId } from "./id";
 
 // Units are millimeters. World is Z-up; three's Y-up primitives (cylinder,
 // cone) are rotated so their axis is Z.
@@ -96,7 +97,7 @@ export function makeShape(kind: PrimitiveKind, at?: Vec3): ShapeNode {
   const params = { ...DEFAULT_PARAMS[kind] };
   const base: Vec3 = at ?? [0, 0, 0];
   return {
-    id: crypto.randomUUID(),
+    id: newId(),
     kind,
     params,
     position: [base[0], base[1], dropHeight(kind, params)],

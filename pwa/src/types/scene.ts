@@ -1,3 +1,5 @@
+import { newId } from "../lib/id";
+
 export type Vec3 = [number, number, number];
 
 export type PrimitiveKind =
@@ -41,7 +43,7 @@ export interface Project {
 
 export function emptyProject(): Project {
   return {
-    id: crypto.randomUUID(),
+    id: newId(),
     name: "Untitled",
     version: 1,
     nodes: {},

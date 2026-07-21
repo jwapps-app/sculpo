@@ -3,6 +3,7 @@ import { temporal } from "zundo";
 import type { PrimitiveKind, Project, ShapeNode, Vec3 } from "../types/scene";
 import { emptyProject, isGroup } from "../types/scene";
 import { makeShape } from "../lib/primitives";
+import { newId } from "../lib/id";
 
 export type TransformMode = "translate" | "rotate" | "scale";
 
@@ -87,7 +88,7 @@ export const useScene = create<SceneState>()(
           if (!node || isGroup(node)) continue; // group duplication arrives with grouping
           copies.push({
             ...structuredClone(node),
-            id: crypto.randomUUID(),
+            id: newId(),
             position: [node.position[0] + 10, node.position[1] + 10, node.position[2]],
           });
         }
