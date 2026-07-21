@@ -3,7 +3,7 @@ import * as THREE from "three";
 import type { GroupNode } from "../types/scene";
 import { evaluateGroup, firstSolidColor, subtreeSignature } from "../lib/csg";
 import { useScene } from "../state/store";
-import { handleMeshClick } from "./ShapeMesh";
+import { handleMeshClick, MeshEdges } from "./ShapeMesh";
 
 export function GroupMesh({ node, dimmed = false }: { node: GroupNode; dimmed?: boolean }) {
   const selected = useScene((s) => s.selection.includes(node.id));
@@ -57,6 +57,7 @@ export function GroupMesh({ node, dimmed = false }: { node: GroupNode; dimmed?: 
         metalness={0.05}
         side={THREE.DoubleSide}
       />
+      <MeshEdges geometry={geometry} faded={dimmed} />
     </mesh>
   );
 }

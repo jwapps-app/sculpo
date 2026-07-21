@@ -1,4 +1,28 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
+import {
+  AlignStartVertical,
+  Copy,
+  Eye,
+  FilePlus2,
+  FileUp,
+  FlipHorizontal2,
+  FolderOpen,
+  Group as GroupIcon,
+  Layers,
+  Lock,
+  LockOpen,
+  Magnet,
+  Move,
+  Printer,
+  RotateCw,
+  Save,
+  Scaling,
+  Trash2,
+  Undo2,
+  Redo2,
+  EyeOff,
+  Ungroup as UngroupIcon,
+} from "lucide-react";
 import { APP_NAME } from "../constants/branding";
 import { useScene, undo, redo } from "../state/store";
 import type { TransformMode } from "../state/store";
@@ -7,43 +31,61 @@ import { exportSceneStl } from "../lib/exportStl";
 import { saveProjectFile, parseProjectFile } from "../lib/projectFile";
 import { importMeshFile } from "../lib/importMesh";
 
-const MODES: { mode: TransformMode; label: string; key: string }[] = [
-  { mode: "translate", label: "Move", key: "G" },
-  { mode: "rotate", label: "Rotate", key: "R" },
-  { mode: "scale", label: "Scale", key: "S" },
+const MODES: { mode: TransformMode; label: string; key: string; icon: typeof Move }[] = [
+  { mode: "translate", label: "Move", key: "G", icon: Move },
+  { mode: "rotate", label: "Rotate", key: "R", icon: RotateCw },
+  { mode: "scale", label: "Scale", key: "S", icon: Scaling },
 ];
 
-function ToolButton({
-  active,
+function IconButton({
+  label,
   onClick,
-  children,
-  title,
+  icon: Icon,
+  active,
   disabled,
+  accent,
 }: {
-  active?: boolean;
+  label: string;
   onClick: () => void;
-  children: React.ReactNode;
-  title?: string;
+  icon: typeof Move;
+  active?: boolean;
   disabled?: boolean;
+  accent?: boolean;
 }) {
   return (
     <button
       onClick={onClick}
-      title={title}
+      title={label}
+      aria-label={label}
       disabled={disabled}
-      className={`rounded-md px-2.5 py-1 text-sm ${
-        active
-          ? "bg-neutral-800 text-white"
-          : "text-neutral-700 hover:bg-neutral-200 disabled:opacity-40"
+      className={`rounded-md p-1.5 ${
+        accent
+          ? "bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40"
+          : active
+            ? "bg-neutral-800 text-white"
+            : "text-neutral-700 hover:bg-neutral-200 disabled:opacity-30"
       }`}
     >
-      {children}
+      <Icon size={17} strokeWidth={1.8} />
     </button>
   );
 }
 
 function Divider() {
-  return <div className="mx-2 h-5 w-px bg-neutral-200" />;
+  return <div className="mx-1.5 h-5 w-px bg-neutral-200" />;
+}
+
+const AXES = ["X", "Y", "Z"] as const;
+
+function Popover({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+  return (
+    <>
+      <div className="fixed inset-0 z-10" onClick={onClose} />
+      <div className="absolute right-0 top-full z-20 mt-1 rounded-md border border-neutral-200 bg-white p-2 shadow-lg">
+        {children}
+      </div>
+    </>
+  );
 }
 
 export function Toolbar() {
@@ -64,17 +106,20 @@ export function Toolbar() {
   const duplicateSelected = useScene((s) => s.duplicateSelected);
   const groupSelected = useScene((s) => s.groupSelected);
   const ungroupSelected = useScene((s) => s.ungroupSelected);
+  const alignSelected = useScene((s) => s.alignSelected);
+  const mirrorSelected = useScene((s) => s.mirrorSelected);
+  const toggleLockSelected = useScene((s) => s.toggleLockSelected);
+  const hideSelected = useScene((s) => s.hideSelected);
+  const showAll = useScene((s) => s.showAll);
   const setProjectName = useScene((s) => s.setProjectName);
   const loadProject = useScene((s) => s.loadProject);
   const newProject = useScene((s) => s.newProject);
-  const showAll = useScene((s) => s.showAll);
   const addImportedMesh = useScene((s) => s.addImportedMesh);
-  const anyHidden = useScene((s) =>
-    Object.values(s.project.nodes).some((n) => n.hidden),
-  );
+  const anyHidden = useScene((s) => Object.values(s.project.nodes).some((n) => n.hidden));
 
   const fileInput = useRef<HTMLInputElement>(null);
   const importInput = useRef<HTMLInputElement>(null);
+  const [menu, setMenu] = useState<"align" | "mirror" | null>(null);
 
   const hasSelection = selection.length > 0;
   const canGroup = selection.length >= 2;
@@ -82,6 +127,7 @@ export function Toolbar() {
     const n = nodes[id];
     return n && isGroup(n);
   });
+  const anyLocked = selection.some((id) => nodes[id]?.locked);
 
   const onExport = () => {
     const { exported, skippedHoles } = exportSceneStl(useScene.getState().project);
@@ -103,84 +149,139 @@ export function Toolbar() {
   };
 
   return (
-    <div className="flex items-center gap-1 border-b border-neutral-200 bg-white px-3 py-1.5">
+    <div className="flex items-center gap-0.5 border-b border-neutral-200 bg-white px-3 py-1">
       <span className="text-sm font-bold">{APP_NAME}</span>
       <input
         key={projectId}
         defaultValue={projectName}
         onBlur={(e) => setProjectName(e.target.value.trim() || "Untitled")}
         title="Project name"
-        className="mx-2 w-32 rounded border border-transparent px-1.5 py-0.5 text-sm text-neutral-600 hover:border-neutral-300 focus:border-neutral-400 focus:outline-none"
+        className="mx-2 w-28 rounded border border-transparent px-1.5 py-0.5 text-sm text-neutral-600 hover:border-neutral-300 focus:border-neutral-400 focus:outline-none"
       />
 
-      {MODES.map(({ mode: m, label, key }) => (
-        <ToolButton key={m} active={mode === m} onClick={() => setMode(m)} title={`${label} (${key})`}>
-          {label}
-        </ToolButton>
+      {MODES.map(({ mode: m, label, key, icon }) => (
+        <IconButton
+          key={m}
+          icon={icon}
+          active={mode === m}
+          onClick={() => setMode(m)}
+          label={`${label} (${key})`}
+        />
       ))}
 
       <Divider />
 
-      <ToolButton active={snap} onClick={() => setSnap(!snap)} title="Snap to grid">
-        Snap
-      </ToolButton>
+      <IconButton icon={Magnet} active={snap} onClick={() => setSnap(!snap)} label="Snap to grid" />
       <select
         value={snapStep}
         onChange={(e) => setSnapStep(Number(e.target.value))}
         title="Snap grid size"
-        className="rounded border border-neutral-300 px-1 py-0.5 text-xs text-neutral-600"
+        className="rounded border border-neutral-300 px-0.5 py-0.5 text-xs text-neutral-600"
       >
         {[0.1, 0.25, 0.5, 1, 2, 5].map((v) => (
           <option key={v} value={v}>
-            {v} mm
+            {v}
           </option>
         ))}
       </select>
 
-      <Divider />
-
-      <ToolButton
+      <IconButton
+        icon={Layers}
         active={workplaneArmed || workplaneSet}
         onClick={() => setWorkplaneArmed(!workplaneArmed)}
-        title="Workplane (W) — click a face to build on it; place on empty space to reset"
-      >
-        Workplane
-      </ToolButton>
+        label="Workplane (W) — click a face to build on it; empty space resets"
+      />
 
       <Divider />
 
-      <ToolButton onClick={undo} title="Undo (⌘Z)">
-        Undo
-      </ToolButton>
-      <ToolButton onClick={redo} title="Redo (⇧⌘Z)">
-        Redo
-      </ToolButton>
+      <IconButton icon={Undo2} onClick={undo} label="Undo (⌘Z)" />
+      <IconButton icon={Redo2} onClick={redo} label="Redo (⇧⌘Z)" />
 
       <Divider />
 
-      <ToolButton onClick={groupSelected} disabled={!canGroup} title="Group (⌘G)">
-        Group
-      </ToolButton>
-      <ToolButton onClick={ungroupSelected} disabled={!canUngroup} title="Ungroup (⇧⌘G)">
-        Ungroup
-      </ToolButton>
+      <IconButton icon={GroupIcon} onClick={groupSelected} disabled={!canGroup} label="Group (⌘G)" />
+      <IconButton
+        icon={UngroupIcon}
+        onClick={ungroupSelected}
+        disabled={!canUngroup}
+        label="Ungroup (⇧⌘G)"
+      />
+
+      <div className="relative">
+        <IconButton
+          icon={AlignStartVertical}
+          onClick={() => setMenu(menu === "align" ? null : "align")}
+          disabled={selection.length < 2}
+          active={menu === "align"}
+          label="Align selection"
+        />
+        {menu === "align" && (
+          <Popover onClose={() => setMenu(null)}>
+            {AXES.map((axis, i) => (
+              <div key={axis} className="flex items-center gap-1 py-0.5">
+                <span className="w-4 text-xs text-neutral-500">{axis}</span>
+                {(["min", "center", "max"] as const).map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => alignSelected(i as 0 | 1 | 2, m)}
+                    className="w-12 rounded border border-neutral-300 px-1 py-0.5 text-xs hover:bg-neutral-100"
+                  >
+                    {m === "min" ? "Min" : m === "center" ? "Mid" : "Max"}
+                  </button>
+                ))}
+              </div>
+            ))}
+          </Popover>
+        )}
+      </div>
+
+      <div className="relative">
+        <IconButton
+          icon={FlipHorizontal2}
+          onClick={() => setMenu(menu === "mirror" ? null : "mirror")}
+          disabled={!hasSelection}
+          active={menu === "mirror"}
+          label="Mirror / flip selection"
+        />
+        {menu === "mirror" && (
+          <Popover onClose={() => setMenu(null)}>
+            <div className="flex gap-1">
+              {AXES.map((axis, i) => (
+                <button
+                  key={axis}
+                  onClick={() => mirrorSelected(i as 0 | 1 | 2)}
+                  className="w-10 rounded border border-neutral-300 px-1 py-1 text-xs hover:bg-neutral-100"
+                >
+                  {axis}
+                </button>
+              ))}
+            </div>
+          </Popover>
+        )}
+      </div>
 
       <Divider />
 
-      <ToolButton onClick={duplicateSelected} disabled={!hasSelection} title="Duplicate (⌘D)">
-        Duplicate
-      </ToolButton>
-      <ToolButton onClick={deleteSelected} disabled={!hasSelection} title="Delete (⌫)">
-        Delete
-      </ToolButton>
-
-      <ToolButton onClick={showAll} disabled={!anyHidden} title="Unhide every hidden object">
-        Show All
-      </ToolButton>
+      <IconButton
+        icon={Copy}
+        onClick={duplicateSelected}
+        disabled={!hasSelection}
+        label="Duplicate (⌘D) — repeat after moving a copy to make a pattern"
+      />
+      <IconButton icon={Trash2} onClick={deleteSelected} disabled={!hasSelection} label="Delete (⌫)" />
+      <IconButton
+        icon={anyLocked ? LockOpen : Lock}
+        onClick={toggleLockSelected}
+        disabled={!hasSelection}
+        label={anyLocked ? "Unlock selection" : "Lock selection"}
+      />
+      <IconButton icon={EyeOff} onClick={hideSelected} disabled={!hasSelection} label="Hide selection" />
+      <IconButton icon={Eye} onClick={showAll} disabled={!anyHidden} label="Show all hidden objects" />
 
       <div className="flex-1" />
 
-      <ToolButton
+      <IconButton
+        icon={FilePlus2}
         onClick={() => {
           if (
             useScene.getState().project.rootOrder.length === 0 ||
@@ -189,31 +290,25 @@ export function Toolbar() {
             newProject();
           }
         }}
-        title="Start an empty project"
-      >
-        New
-      </ToolButton>
-      <ToolButton
+        label="New project"
+      />
+      <IconButton
+        icon={FileUp}
         onClick={() => importInput.current?.click()}
-        title="Import an STL, OBJ, or SVG as a shape"
-      >
-        Import
-      </ToolButton>
-      <ToolButton onClick={() => fileInput.current?.click()} title="Open a saved project file">
-        Open
-      </ToolButton>
-      <ToolButton
+        label="Import STL / OBJ / SVG"
+      />
+      <IconButton
+        icon={FolderOpen}
+        onClick={() => fileInput.current?.click()}
+        label="Open project file"
+      />
+      <IconButton
+        icon={Save}
         onClick={() => saveProjectFile(useScene.getState().project)}
-        title="Download the project as JSON"
-      >
-        Save
-      </ToolButton>
-      <button
-        onClick={onExport}
-        className="ml-1 rounded-md bg-blue-600 px-3 py-1 text-sm font-medium text-white hover:bg-blue-700"
-      >
-        Export STL
-      </button>
+        label="Save project as JSON"
+      />
+      <span className="mx-0.5" />
+      <IconButton icon={Printer} onClick={onExport} accent label="Export STL for printing" />
 
       <input
         ref={fileInput}

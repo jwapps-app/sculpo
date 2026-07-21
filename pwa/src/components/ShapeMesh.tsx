@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import * as THREE from "three";
 import type { ThreeEvent } from "@react-three/fiber";
 import type { ShapeNode } from "../types/scene";
@@ -21,6 +21,31 @@ export function handleMeshClick(e: ThreeEvent<MouseEvent>, nodeId: string) {
     return;
   }
   s.select(nodeId, e.shiftKey);
+}
+
+// Feature edges above this vertex count are skipped (imported meshes can be
+// huge and organic scans have no meaningful edges anyway).
+export const EDGE_VERTEX_LIMIT = 60_000;
+export const EDGE_ANGLE = 30;
+
+export function MeshEdges({
+  geometry,
+  faded = false,
+}: {
+  geometry: THREE.BufferGeometry;
+  faded?: boolean;
+}) {
+  const edges = useMemo(() => {
+    if (geometry.getAttribute("position").count > EDGE_VERTEX_LIMIT) return null;
+    return new THREE.EdgesGeometry(geometry, EDGE_ANGLE);
+  }, [geometry]);
+  useEffect(() => () => edges?.dispose(), [edges]);
+  if (!edges) return null;
+  return (
+    <lineSegments geometry={edges} raycast={() => null}>
+      <lineBasicMaterial color="#1c1c1c" transparent opacity={faded ? 0.12 : 0.75} />
+    </lineSegments>
+  );
 }
 
 export function ShapeMesh({ node, dimmed = false }: { node: ShapeNode; dimmed?: boolean }) {
@@ -57,6 +82,7 @@ export function ShapeMesh({ node, dimmed = false }: { node: ShapeNode; dimmed?: 
         metalness={0.05}
         side={THREE.DoubleSide}
       />
+      <MeshEdges geometry={geometry} faded={dimmed || isHole} />
     </mesh>
   );
 }
