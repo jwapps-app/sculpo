@@ -11,6 +11,7 @@ import { ShapeMesh } from "./ShapeMesh";
 import { GroupMesh } from "./GroupMesh";
 import { Gizmo } from "./Gizmo";
 import { ResizeHandles } from "./ResizeHandles";
+import { AlignDots } from "./AlignDots";
 import { PlacementPreview } from "./PlacementPreview";
 import { SceneRig } from "./SceneRig";
 import { placementState } from "../lib/placement";
@@ -341,6 +342,10 @@ export function Viewport() {
             s.setWorkplane(null);
             return;
           }
+          if (s.alignMode) {
+            s.setAlignMode(false);
+            return;
+          }
           clearSelection();
         }}
         className="bg-neutral-100"
@@ -390,6 +395,7 @@ export function Viewport() {
 
         <Gizmo />
         <ResizeHandles />
+        <AlignDots />
         <PlacementPreview />
         <OrbitControls
           makeDefault

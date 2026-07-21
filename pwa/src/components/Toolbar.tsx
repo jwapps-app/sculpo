@@ -110,7 +110,8 @@ export function Toolbar() {
   const duplicateSelected = useScene((s) => s.duplicateSelected);
   const groupSelected = useScene((s) => s.groupSelected);
   const ungroupSelected = useScene((s) => s.ungroupSelected);
-  const alignSelected = useScene((s) => s.alignSelected);
+  const alignMode = useScene((s) => s.alignMode);
+  const setAlignMode = useScene((s) => s.setAlignMode);
   const mirrorSelected = useScene((s) => s.mirrorSelected);
   const toggleLockSelected = useScene((s) => s.toggleLockSelected);
   const hideSelected = useScene((s) => s.hideSelected);
@@ -123,7 +124,7 @@ export function Toolbar() {
 
   const fileInput = useRef<HTMLInputElement>(null);
   const importInput = useRef<HTMLInputElement>(null);
-  const [menu, setMenu] = useState<"align" | "mirror" | null>(null);
+  const [menu, setMenu] = useState<"mirror" | null>(null);
 
   const hasSelection = selection.length > 0;
   const canGroup = selection.length >= 2;
@@ -217,35 +218,13 @@ export function Toolbar() {
         label="Ungroup (⇧⌘G)"
       />
 
-      <div className="relative">
-        <IconButton
-          icon={AlignStartVertical}
-          onClick={() => setMenu(menu === "align" ? null : "align")}
-          disabled={selection.length < 2}
-          active={menu === "align"}
-          label="Align selection"
-        />
-        {menu === "align" && (
-          <Popover onClose={() => setMenu(null)}>
-            {AXES.map((axis, i) => (
-              <div key={axis} className="flex items-center gap-1 py-0.5">
-                <span className="w-4 text-xs font-bold" style={{ color: AXIS_COLORS[i] }}>
-                  {axis}
-                </span>
-                {(["min", "center", "max"] as const).map((m) => (
-                  <button
-                    key={m}
-                    onClick={() => alignSelected(i as 0 | 1 | 2, m)}
-                    className="w-12 rounded border border-neutral-300 px-1 py-0.5 text-xs hover:bg-neutral-100"
-                  >
-                    {m === "min" ? "Min" : m === "center" ? "Mid" : "Max"}
-                  </button>
-                ))}
-              </div>
-            ))}
-          </Popover>
-        )}
-      </div>
+      <IconButton
+        icon={AlignStartVertical}
+        onClick={() => setAlignMode(!alignMode)}
+        disabled={selection.length < 2 && !alignMode}
+        active={alignMode}
+        label="Align (L) — click the colored dots on the selection"
+      />
 
       <div className="relative">
         <IconButton

@@ -182,34 +182,19 @@ function FlipRow() {
 }
 
 function AlignPanel() {
-  const alignSelected = useScene((s) => s.alignSelected);
-  const modes = [
-    { mode: "min", label: "Min" },
-    { mode: "center", label: "Mid" },
-    { mode: "max", label: "Max" },
-  ] as const;
+  const alignMode = useScene((s) => s.alignMode);
+  const setAlignMode = useScene((s) => s.setAlignMode);
   return (
-    <div className="space-y-1">
-      <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
-        Align
-      </div>
-      {AXES.map((axis, i) => (
-        <div key={axis} className="flex items-center gap-1">
-          <span className="w-4 text-xs font-bold" style={{ color: AXIS_COLORS[i] }}>
-            {axis}
-          </span>
-          {modes.map(({ mode, label }) => (
-            <button
-              key={mode}
-              onClick={() => alignSelected(i as 0 | 1 | 2, mode)}
-              className="flex-1 rounded border border-neutral-300 px-1 py-0.5 text-xs hover:bg-neutral-100"
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      ))}
-    </div>
+    <button
+      onClick={() => setAlignMode(!alignMode)}
+      className={`rounded border px-2 py-1 text-xs ${
+        alignMode
+          ? "border-neutral-700 bg-neutral-800 text-white"
+          : "border-neutral-300 hover:bg-neutral-100"
+      }`}
+    >
+      {alignMode ? "Align: click the colored dots" : "Align (L)"}
+    </button>
   );
 }
 

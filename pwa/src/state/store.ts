@@ -117,10 +117,12 @@ interface SceneState {
   smartDup: SmartDup | null;
   cruiseMode: boolean;
   placing: PrimitiveKind | null;
+  alignMode: boolean;
 
   addShape: (kind: PrimitiveKind, placement?: Placement) => void;
   placeShapeAt: (kind: PrimitiveKind, position: Vec3, rotation: Vec3) => void;
   setPlacing: (kind: PrimitiveKind | null) => void;
+  setAlignMode: (on: boolean) => void;
   addImportedMesh: (params: Record<string, string>, name: string) => void;
   updateShape: (id: string, patch: Partial<Omit<ShapeNode, "id" | "kind">>) => void;
   setTransform: (id: string, position: Vec3, rotation: Vec3, scale: Vec3) => void;
@@ -170,6 +172,7 @@ export const useScene = create<SceneState>()(
       smartDup: null,
       cruiseMode: false,
       placing: null,
+      alignMode: false,
 
       addShape: (kind, placement) => {
         const shape = makeShape(kind);
@@ -256,6 +259,8 @@ export const useScene = create<SceneState>()(
 
       setPlacing: (kind) =>
         set({ placing: kind, ...(kind ? { workplaneArmed: false, cruiseMode: false } : {}) }),
+
+      setAlignMode: (on) => set({ alignMode: on }),
 
       addImportedMesh: (params, name) => {
         const shape = makeShape("mesh");
