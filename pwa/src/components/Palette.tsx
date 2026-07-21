@@ -27,27 +27,29 @@ export function Palette() {
       <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
         Shapes
       </div>
-      {KINDS.map(({ kind, label }) => (
-        <button
-          key={kind}
-          onClick={() => addShape(kind)}
-          draggable
-          onDragStart={(e) => {
-            e.dataTransfer.setData(SHAPE_DRAG_TYPE, kind);
-            e.dataTransfer.effectAllowed = "copy";
-          }}
-          title="Click to add at origin, or drag onto the workplane"
-          className="flex cursor-grab items-center gap-2 rounded-md border border-neutral-200 px-2 py-1.5 text-sm hover:bg-neutral-100 active:bg-neutral-200"
-        >
-          <img
-            src={shapeIcon(kind)}
-            alt=""
-            draggable={false}
-            className="h-8 w-8 shrink-0"
-          />
-          {label}
-        </button>
-      ))}
+      <div className="grid grid-cols-2 gap-1.5">
+        {KINDS.map(({ kind, label }) => (
+          <button
+            key={kind}
+            onClick={() => addShape(kind)}
+            draggable
+            onDragStart={(e) => {
+              e.dataTransfer.setData(SHAPE_DRAG_TYPE, kind);
+              e.dataTransfer.effectAllowed = "copy";
+            }}
+            title={label}
+            aria-label={label}
+            className="flex aspect-square cursor-grab items-center justify-center rounded-md border border-neutral-200 hover:border-neutral-300 hover:bg-neutral-100 active:bg-neutral-200"
+          >
+            <img
+              src={shapeIcon(kind)}
+              alt={label}
+              draggable={false}
+              className="h-9 w-9"
+            />
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
