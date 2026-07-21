@@ -12,7 +12,6 @@ let renderer: THREE.WebGLRenderer | null = null;
 // Flat-profile shapes read better nearly face-on than from the default iso.
 const ICON_VIEW: Partial<Record<PrimitiveKind, THREE.Vector3>> = {
   text: new THREE.Vector3(0.15, -1, 0.35),
-  heart: new THREE.Vector3(0.15, -0.45, 1),
   star: new THREE.Vector3(0.15, -0.45, 1),
 };
 const DEFAULT_VIEW = new THREE.Vector3(1, -1, 0.75);

@@ -14,9 +14,9 @@ const KINDS: { kind: PrimitiveKind; label: string }[] = [
   { kind: "pyramid", label: "Pyramid" },
   { kind: "hemisphere", label: "Half Sphere" },
   { kind: "polygon", label: "Polygon" },
+  { kind: "octagon", label: "Octagon" },
   { kind: "tube", label: "Tube" },
   { kind: "star", label: "Star" },
-  { kind: "heart", label: "Heart" },
   { kind: "text", label: "Text" },
 ];
 
