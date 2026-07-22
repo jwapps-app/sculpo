@@ -159,6 +159,7 @@ export function Toolbar() {
 
   return (
     <div className="flex items-center gap-0.5 border-b border-neutral-200 bg-white px-3 py-1">
+      <img src="/icon.svg" alt="" className="mr-1.5 h-5 w-5 rounded" />
       <span className="text-sm font-bold">{APP_NAME}</span>
       <input
         key={projectId}

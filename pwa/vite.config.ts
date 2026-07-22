@@ -15,13 +15,19 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: "autoUpdate",
+      includeAssets: ["icon.svg", "apple-touch-icon.png"],
       manifest: {
         name: APP_NAME,
         short_name: APP_NAME,
         description: APP_TAGLINE,
         display: "standalone",
-        background_color: "#f5f5f5",
-        theme_color: "#262626",
+        background_color: "#232936",
+        theme_color: "#232936",
+        icons: [
+          { src: "pwa-192.png", sizes: "192x192", type: "image/png" },
+          { src: "pwa-512.png", sizes: "512x512", type: "image/png" },
+          { src: "maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+        ],
       },
     }),
   ],
