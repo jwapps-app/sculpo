@@ -23,8 +23,7 @@ services:
       ENVIRONMENT: production
       DATABASE_URL: postgresql+asyncpg://app:${DB_PASSWORD}@db:5432/app
       SECRET_KEY: ${SECRET_KEY}
-      APP_NAME: ${APP_NAME:-Sculpo}
-      ALLOWED_USERS: ${ALLOWED_USERS}
+      ADMIN_USERS: ${ADMIN_USERS}
     depends_on:
       db:
         condition: service_healthy

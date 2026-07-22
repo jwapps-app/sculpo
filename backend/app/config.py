@@ -16,9 +16,9 @@ class Settings(BaseSettings):
     allowed_origins: str = ""
     app_url: str = "http://localhost:5199"
 
-    # Comma-separated usernames allowed to register. Empty = registration
-    # closed.
-    allowed_users: str = ""
+    # Comma-separated admin usernames. Admins can always register and manage
+    # other users from the UI; everyone else needs an invite created there.
+    admin_users: str = ""
 
     session_ttl_days: int = 90
 
@@ -32,8 +32,8 @@ class Settings(BaseSettings):
         return [o.strip() for o in self.allowed_origins.split(",") if o.strip()]
 
     @property
-    def allowed_user_set(self) -> set[str]:
-        return {u.strip().lower() for u in self.allowed_users.split(",") if u.strip()}
+    def admin_user_set(self) -> set[str]:
+        return {u.strip().lower() for u in self.admin_users.split(",") if u.strip()}
 
     def validate_production(self) -> None:
         if self.environment == "production":

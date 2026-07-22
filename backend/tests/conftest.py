@@ -4,7 +4,7 @@ os.environ.update(
     ENVIRONMENT="test",
     DEBUG="true",
     DATABASE_URL="sqlite+aiosqlite:///:memory:",
-    ALLOWED_USERS="john,other",
+    ADMIN_USERS="john",
     SECRET_KEY="test-secret-key-that-is-long-enough!",
 )
 
@@ -43,6 +43,16 @@ async def client():
 async def sign_in(client: AsyncClient, username: str = "john") -> str:
     creds = {"username": username, "password": f"pw-for-{username}-123"}
     r = await client.post("/api/v1/auth/register", json=creds)
+    if r.status_code == 403 and username != "john":
+        # Not invited yet — have the admin invite them first.
+        admin = await sign_in(client, "john")
+        inv = await client.post(
+            "/api/v1/admin/invites",
+            json={"username": username},
+            headers={"Authorization": f"Bearer {admin}"},
+        )
+        assert inv.status_code == 201, inv.text
+        r = await client.post("/api/v1/auth/register", json=creds)
     if r.status_code == 409:
         r = await client.post("/api/v1/auth/login", json=creds)
     assert r.status_code in (200, 201), r.text

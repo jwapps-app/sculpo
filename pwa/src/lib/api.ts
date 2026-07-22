@@ -46,6 +46,22 @@ export interface ProjectMeta {
   updated_at: string;
 }
 
+export interface UserInfo {
+  id: string;
+  username: string;
+  is_admin: boolean;
+}
+
+export interface SessionInfo {
+  session_token: string;
+  user: UserInfo;
+}
+
+export interface AdminOverview {
+  users: UserInfo[];
+  invited: string[];
+}
+
 export const api = {
   async available(): Promise<boolean> {
     try {
@@ -56,16 +72,33 @@ export const api = {
     }
   },
   login: (username: string, password: string) =>
-    request<{ session_token: string; user: { id: string; username: string } }>("/auth/login", {
+    request<SessionInfo>("/auth/login", {
       method: "POST",
       body: JSON.stringify({ username, password }),
     }),
   register: (username: string, password: string) =>
-    request<{ session_token: string; user: { id: string; username: string } }>(
-      "/auth/register",
-      { method: "POST", body: JSON.stringify({ username, password }) },
-    ),
-  me: () => request<{ id: string; username: string }>("/auth/me"),
+    request<SessionInfo>("/auth/register", {
+      method: "POST",
+      body: JSON.stringify({ username, password }),
+    }),
+  me: () => request<UserInfo>("/auth/me"),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    request<void>("/auth/change-password", {
+      method: "POST",
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    }),
+  adminUsers: () => request<AdminOverview>("/admin/users"),
+  adminInvite: (username: string) =>
+    request<AdminOverview>("/admin/invites", {
+      method: "POST",
+      body: JSON.stringify({ username }),
+    }),
+  adminRevokeInvite: (username: string) =>
+    request<AdminOverview>(`/admin/invites/${encodeURIComponent(username)}`, {
+      method: "DELETE",
+    }),
+  adminDeleteUser: (id: string) =>
+    request<AdminOverview>(`/admin/users/${id}`, { method: "DELETE" }),
   logout: () => request<void>("/auth/logout", { method: "POST" }),
   listProjects: () => request<ProjectMeta[]>("/projects"),
   getProject: (id: string) =>
