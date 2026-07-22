@@ -1,26 +1,18 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
-class RequestLinkIn(BaseModel):
-    email: EmailStr
-
-
-class RequestLinkOut(BaseModel):
-    message: str
-    dev_magic_link: str | None = None
-
-
-class VerifyIn(BaseModel):
-    token: str = Field(min_length=10, max_length=200)
+class CredentialsIn(BaseModel):
+    username: str = Field(min_length=3, max_length=32)
+    password: str = Field(min_length=8, max_length=200)
 
 
 class UserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: str
-    email: str
+    username: str
 
 
 class SessionOut(BaseModel):

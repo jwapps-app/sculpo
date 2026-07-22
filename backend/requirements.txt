@@ -5,3 +5,4 @@ asyncpg>=0.30
 alembic>=1.14
 pydantic-settings>=2.6
 pydantic[email]>=2.9
+bcrypt>=4.2

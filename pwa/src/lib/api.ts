@@ -55,17 +55,17 @@ export const api = {
       return false;
     }
   },
-  requestLink: (email: string) =>
-    request<{ message: string; dev_magic_link: string | null }>("/auth/request-link", {
+  login: (username: string, password: string) =>
+    request<{ session_token: string; user: { id: string; username: string } }>("/auth/login", {
       method: "POST",
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({ username, password }),
     }),
-  verify: (token: string) =>
-    request<{ session_token: string; user: { id: string; email: string } }>("/auth/verify", {
-      method: "POST",
-      body: JSON.stringify({ token }),
-    }),
-  me: () => request<{ id: string; email: string }>("/auth/me"),
+  register: (username: string, password: string) =>
+    request<{ session_token: string; user: { id: string; username: string } }>(
+      "/auth/register",
+      { method: "POST", body: JSON.stringify({ username, password }) },
+    ),
+  me: () => request<{ id: string; username: string }>("/auth/me"),
   logout: () => request<void>("/auth/logout", { method: "POST" }),
   listProjects: () => request<ProjectMeta[]>("/projects"),
   getProject: (id: string) =>

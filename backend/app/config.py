@@ -16,19 +16,11 @@ class Settings(BaseSettings):
     allowed_origins: str = ""
     app_url: str = "http://localhost:5199"
 
-    # Comma-separated emails allowed to sign in. Empty = nobody (locked).
-    allowed_emails: str = ""
+    # Comma-separated usernames allowed to register. Empty = registration
+    # closed.
+    allowed_users: str = ""
 
-    magic_link_ttl_minutes: int = 15
     session_ttl_days: int = 90
-
-    # SMTP for magic-link delivery. Unset host + debug=true surfaces the link
-    # in the API response instead (dev only).
-    smtp_host: str = ""
-    smtp_port: int = 587
-    smtp_user: str = ""
-    smtp_password: str = ""
-    smtp_from: str = ""
 
     # Hard cap on a stored project's serialized size (imported meshes ride
     # inside the JSON).
@@ -40,8 +32,8 @@ class Settings(BaseSettings):
         return [o.strip() for o in self.allowed_origins.split(",") if o.strip()]
 
     @property
-    def allowed_email_set(self) -> set[str]:
-        return {e.strip().lower() for e in self.allowed_emails.split(",") if e.strip()}
+    def allowed_user_set(self) -> set[str]:
+        return {u.strip().lower() for u in self.allowed_users.split(",") if u.strip()}
 
     def validate_production(self) -> None:
         if self.environment == "production":

@@ -7,8 +7,8 @@ pytestmark = pytest.mark.asyncio
 DOC = {"id": "p1", "name": "test", "version": 1, "nodes": {}, "rootOrder": []}
 
 
-async def auth(client, email="allowed@example.com"):
-    return {"Authorization": f"Bearer {await sign_in(client, email)}"}
+async def auth(client, username="john"):
+    return {"Authorization": f"Bearer {await sign_in(client, username)}"}
 
 
 async def test_requires_auth(client):
@@ -35,16 +35,9 @@ async def test_crud_roundtrip(client):
     assert (await client.get(f"/api/v1/projects/{pid}", headers=h)).status_code == 404
 
 
-async def test_cross_user_isolation(client, monkeypatch):
-    from app.config import settings
-
-    monkeypatch.setattr(
-        type(settings),
-        "allowed_email_set",
-        property(lambda self: {"allowed@example.com", "other@example.com"}),
-    )
-    h1 = await auth(client, "allowed@example.com")
-    h2 = await auth(client, "other@example.com")
+async def test_cross_user_isolation(client):
+    h1 = await auth(client, "john")
+    h2 = await auth(client, "other")
 
     pid = (
         await client.post("/api/v1/projects", json={"name": "mine", "data": DOC}, headers=h1)

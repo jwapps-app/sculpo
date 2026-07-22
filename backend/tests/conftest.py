@@ -4,7 +4,7 @@ os.environ.update(
     ENVIRONMENT="test",
     DEBUG="true",
     DATABASE_URL="sqlite+aiosqlite:///:memory:",
-    ALLOWED_EMAILS="allowed@example.com",
+    ALLOWED_USERS="john,other",
     SECRET_KEY="test-secret-key-that-is-long-enough!",
 )
 
@@ -23,9 +23,9 @@ def anyio_backend():
 
 @pytest_asyncio.fixture(autouse=True)
 async def _schema():
-    from app.routers.auth import _REQUESTS
+    from app.routers.auth import _FAILS
 
-    _REQUESTS.clear()
+    _FAILS.clear()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield
@@ -40,12 +40,10 @@ async def client():
         yield c
 
 
-async def sign_in(client: AsyncClient, email: str = "allowed@example.com") -> str:
-    r = await client.post("/api/v1/auth/request-link", json={"email": email})
-    assert r.status_code == 200
-    link = r.json()["dev_magic_link"]
-    assert link, "dev link should be surfaced in debug"
-    token = link.split("token=")[1]
-    r = await client.post("/api/v1/auth/verify", json={"token": token})
-    assert r.status_code == 200
+async def sign_in(client: AsyncClient, username: str = "john") -> str:
+    creds = {"username": username, "password": f"pw-for-{username}-123"}
+    r = await client.post("/api/v1/auth/register", json=creds)
+    if r.status_code == 409:
+        r = await client.post("/api/v1/auth/login", json=creds)
+    assert r.status_code in (200, 201), r.text
     return r.json()["session_token"]

@@ -1,10 +1,8 @@
-"""Magic-link auth, allowlist-gated. No passwords anywhere.
+"""Username + password auth. Registration is gated by the ALLOWED_USERS
+allowlist; sessions are opaque bearer tokens stored hashed."""
 
-Flow: request-link (allowlisted emails only) -> emailed token -> verify ->
-opaque session token. Responses are identical for allowed and unknown emails
-so the endpoint can't be used to probe the allowlist.
-"""
-
+import asyncio
+import re
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -13,101 +11,96 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.core.email import magic_link_body, send_email
-from app.core.security import hash_token, new_token
+from app.core.security import hash_password, new_token, verify_password
 from app.database import get_db
 from app.deps import get_current_user
-from app.models import MagicLinkToken, User, UserSession
-from app.schemas import RequestLinkIn, RequestLinkOut, SessionOut, UserOut, VerifyIn
+from app.models import User, UserSession
+from app.schemas import CredentialsIn, SessionOut, UserOut
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-_GENERIC = "If that email is allowed, a sign-in link is on its way."
+USERNAME_RE = re.compile(r"^[a-z0-9_-]{3,32}$")
 
-# In-memory throttle: per-email request cap. Resets on restart — fine at this
-# scale; move to Redis if this ever runs multi-instance.
-_REQUESTS: dict[str, list[float]] = {}
-_MAX_REQUESTS = 5
+# In-memory brute-force throttle: lock a username out after too many failed
+# logins in a window. Resets on restart — fine at this scale.
+_FAILS: dict[str, list[float]] = {}
+_MAX_FAILS = 5
 _WINDOW = 15 * 60
 
 
-def _throttled(email: str) -> bool:
+def _throttled(username: str) -> bool:
     now = time.time()
-    recent = [t for t in _REQUESTS.get(email, []) if now - t < _WINDOW]
-    _REQUESTS[email] = recent
-    return len(recent) >= _MAX_REQUESTS
+    recent = [t for t in _FAILS.get(username, []) if now - t < _WINDOW]
+    _FAILS[username] = recent
+    return len(recent) >= _MAX_FAILS
 
 
-@router.post("/request-link", response_model=RequestLinkOut)
-async def request_link(payload: RequestLinkIn, db: AsyncSession = Depends(get_db)) -> RequestLinkOut:
-    email = payload.email.strip().lower()
-    if _throttled(email):
-        return RequestLinkOut(message=_GENERIC)
-    _REQUESTS.setdefault(email, []).append(time.time())
-
-    if email not in settings.allowed_email_set:
-        return RequestLinkOut(message=_GENERIC)
-
-    raw, token_hash = new_token()
-    db.add(
-        MagicLinkToken(
-            email=email,
-            token_hash=token_hash,
-            expires_at=datetime.now(timezone.utc)
-            + timedelta(minutes=settings.magic_link_ttl_minutes),
-        )
-    )
-    link = f"{settings.app_url}/?token={raw}"
-
-    if settings.smtp_host:
-        subject, body = magic_link_body(link)
-        await send_email(email, subject, body)
-        return RequestLinkOut(message=_GENERIC)
-    if settings.debug:
-        # Dev only: no mail server, surface the link so the flow can complete.
-        return RequestLinkOut(message=_GENERIC, dev_magic_link=link)
-    raise HTTPException(
-        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-        detail="Email delivery is not configured.",
-    )
+def _record_fail(username: str) -> None:
+    _FAILS.setdefault(username, []).append(time.time())
 
 
-@router.post("/verify", response_model=SessionOut)
-async def verify(payload: VerifyIn, db: AsyncSession = Depends(get_db)) -> SessionOut:
-    now = datetime.now(timezone.utc)
-    token = (
-        await db.execute(
-            select(MagicLinkToken).where(MagicLinkToken.token_hash == hash_token(payload.token))
-        )
-    ).scalar_one_or_none()
-    if (
-        token is None
-        or token.used_at is not None
-        or token.expires_at.replace(tzinfo=timezone.utc) < now
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="That sign-in link is invalid or has expired.",
-        )
-    token.used_at = now
-
-    user = (
-        await db.execute(select(User).where(User.email == token.email))
-    ).scalar_one_or_none()
-    if user is None:
-        user = User(email=token.email)
-        db.add(user)
-        await db.flush()
-
+async def _issue_session(db: AsyncSession, user: User) -> SessionOut:
     raw, token_hash = new_token()
     db.add(
         UserSession(
             user_id=user.id,
             token_hash=token_hash,
-            expires_at=now + timedelta(days=settings.session_ttl_days),
+            expires_at=datetime.now(timezone.utc) + timedelta(days=settings.session_ttl_days),
         )
     )
     return SessionOut(session_token=raw, user=UserOut.model_validate(user))
+
+
+@router.post("/register", response_model=SessionOut, status_code=status.HTTP_201_CREATED)
+async def register(payload: CredentialsIn, db: AsyncSession = Depends(get_db)) -> SessionOut:
+    username = payload.username.strip().lower()
+    if not USERNAME_RE.match(username):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Usernames are 3–32 characters: letters, digits, - or _.",
+        )
+    if username not in settings.allowed_user_set:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Registration is not open for this username.",
+        )
+    existing = (
+        await db.execute(select(User).where(User.username == username))
+    ).scalar_one_or_none()
+    if existing is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="That username is already registered.",
+        )
+    password_hash = await asyncio.to_thread(hash_password, payload.password)
+    user = User(username=username, password_hash=password_hash)
+    db.add(user)
+    await db.flush()
+    return await _issue_session(db, user)
+
+
+@router.post("/login", response_model=SessionOut)
+async def login(payload: CredentialsIn, db: AsyncSession = Depends(get_db)) -> SessionOut:
+    username = payload.username.strip().lower()
+    if _throttled(username):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many attempts — try again in a few minutes.",
+        )
+    user = (
+        await db.execute(select(User).where(User.username == username))
+    ).scalar_one_or_none()
+    # Verify even when the user is missing so timing doesn't reveal usernames.
+    ok = await asyncio.to_thread(
+        verify_password, payload.password, user.password_hash if user else None
+    )
+    if not ok or user is None:
+        _record_fail(username)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid username or password.",
+        )
+    return await _issue_session(db, user)
 
 
 @router.get("/me", response_model=UserOut)
@@ -120,7 +113,7 @@ async def logout(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> None:
-    # Drop every session for this user (single-user tool; "sign out everywhere").
+    # Drop every session for this user ("sign out everywhere").
     sessions = (
         await db.execute(select(UserSession).where(UserSession.user_id == user.id))
     ).scalars()

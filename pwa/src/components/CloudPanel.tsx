@@ -7,15 +7,16 @@ type AuthState =
   | { kind: "checking" }
   | { kind: "offline" }
   | { kind: "signed-out" }
-  | { kind: "signed-in"; email: string };
+  | { kind: "signed-in"; username: string };
 
-// Cloud projects: sign in with a magic link, then list/open/save/delete
-// designs stored on the server. Invisible when no backend is reachable —
-// the standalone tool keeps working without it.
+// Cloud projects: sign in with username + password, then list/open/save/
+// delete designs stored on the server. Invisible when no backend is
+// reachable — the standalone tool keeps working without it.
 export function CloudPanel() {
   const [auth, setAuth] = useState<AuthState>({ kind: "checking" });
   const [open, setOpen] = useState(false);
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [projects, setProjects] = useState<ProjectMeta[] | null>(null);
@@ -24,24 +25,8 @@ export function CloudPanel() {
   const setCloudProjectId = useScene((s) => s.setCloudProjectId);
   const loadProject = useScene((s) => s.loadProject);
 
-  // Startup: consume a magic-link token from the URL, then resolve auth state.
   useEffect(() => {
     (async () => {
-      const params = new URLSearchParams(location.search);
-      const linkToken = params.get("token");
-      if (linkToken) {
-        history.replaceState(null, "", location.pathname);
-        try {
-          const session = await api.verify(linkToken);
-          setToken(session.session_token);
-          setAuth({ kind: "signed-in", email: session.user.email });
-          setOpen(true);
-          return;
-        } catch (err) {
-          setNotice(err instanceof Error ? err.message : "Sign-in failed.");
-          setOpen(true);
-        }
-      }
       if (!(await api.available())) {
         setAuth({ kind: "offline" });
         return;
@@ -49,7 +34,7 @@ export function CloudPanel() {
       if (getToken()) {
         try {
           const user = await api.me();
-          setAuth({ kind: "signed-in", email: user.email });
+          setAuth({ kind: "signed-in", username: user.username });
           return;
         } catch {
           /* expired */
@@ -67,24 +52,19 @@ export function CloudPanel() {
 
   if (auth.kind === "offline" || auth.kind === "checking") return null;
 
-  const requestLink = async () => {
+  const submit = async (mode: "login" | "register") => {
     setBusy(true);
     setNotice(null);
     try {
-      const res = await api.requestLink(email.trim());
-      if (res.dev_magic_link) {
-        // Dev convenience: no mail server, follow the link directly.
-        const token = new URL(res.dev_magic_link).searchParams.get("token");
-        if (token) {
-          const session = await api.verify(token);
-          setToken(session.session_token);
-          setAuth({ kind: "signed-in", email: session.user.email });
-          return;
-        }
-      }
-      setNotice(res.message);
+      const session =
+        mode === "login"
+          ? await api.login(username.trim(), password)
+          : await api.register(username.trim(), password);
+      setToken(session.session_token);
+      setAuth({ kind: "signed-in", username: session.user.username });
+      setPassword("");
     } catch (err) {
-      setNotice(err instanceof Error ? err.message : "Could not request a link.");
+      setNotice(err instanceof Error ? err.message : "Sign-in failed.");
     } finally {
       setBusy(false);
     }
@@ -123,11 +103,15 @@ export function CloudPanel() {
     }
   };
 
+  const canSubmit = username.trim().length >= 3 && password.length >= 8 && !busy;
+
   return (
     <div className="relative">
       <button
         onClick={() => setOpen(!open)}
-        title={auth.kind === "signed-in" ? `Cloud projects (${auth.email})` : "Cloud projects — sign in"}
+        title={
+          auth.kind === "signed-in" ? `Cloud projects (${auth.username})` : "Cloud projects — sign in"
+        }
         aria-label="Cloud projects"
         className={`rounded-md p-1.5 ${
           open ? "bg-neutral-800 text-white" : "text-neutral-700 hover:bg-neutral-200"
@@ -152,30 +136,51 @@ export function CloudPanel() {
             </div>
 
             {auth.kind === "signed-out" ? (
-              <div className="space-y-2">
-                <p className="text-xs text-neutral-500">
-                  Enter your email and follow the sign-in link.
-                </p>
+              <form
+                className="space-y-2"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (canSubmit) submit("login");
+                }}
+              >
                 <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && email && requestLink()}
-                  placeholder="you@example.com"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="username"
+                  autoComplete="username"
                   className="w-full rounded border border-neutral-300 px-2 py-1 text-sm"
                 />
-                <button
-                  onClick={requestLink}
-                  disabled={busy || !email.trim()}
-                  className="w-full rounded bg-blue-600 px-2 py-1 text-sm text-white hover:bg-blue-700 disabled:opacity-40"
-                >
-                  Send sign-in link
-                </button>
-              </div>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="password (8+ characters)"
+                  autoComplete="current-password"
+                  className="w-full rounded border border-neutral-300 px-2 py-1 text-sm"
+                />
+                <div className="flex gap-1">
+                  <button
+                    type="submit"
+                    disabled={!canSubmit}
+                    className="flex-1 rounded bg-blue-600 px-2 py-1 text-sm text-white hover:bg-blue-700 disabled:opacity-40"
+                  >
+                    Sign in
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => submit("register")}
+                    disabled={!canSubmit}
+                    title="First time? Create your account"
+                    className="flex-1 rounded border border-neutral-300 px-2 py-1 text-sm hover:bg-neutral-100 disabled:opacity-40"
+                  >
+                    Create account
+                  </button>
+                </div>
+              </form>
             ) : (
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-xs text-neutral-500">
-                  <span>{auth.kind === "signed-in" ? auth.email : ""}</span>
+                  <span>{auth.kind === "signed-in" ? auth.username : ""}</span>
                   <button
                     onClick={async () => {
                       try {
