@@ -338,8 +338,13 @@ export function Toolbar() {
           e.target.value = "";
           if (!file) return;
           try {
-            const { params, name } = await importMeshFile(file);
+            const { params, name, triangles, simplifiedFrom } = await importMeshFile(file);
             addImportedMesh(params, name);
+            if (simplifiedFrom) {
+              alert(
+                `Imported. Simplified from ${simplifiedFrom.toLocaleString()} to ${triangles.toLocaleString()} triangles so editing stays smooth.`,
+              );
+            }
           } catch (err) {
             alert(err instanceof Error ? err.message : "Could not import the file.");
           }
