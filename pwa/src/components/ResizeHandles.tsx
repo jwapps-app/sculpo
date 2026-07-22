@@ -81,6 +81,10 @@ interface DragState {
   start: THREE.Vector3;
   uniform: boolean;
   objects: { id: string; obj: THREE.Object3D; startWorld: THREE.Matrix4 }[];
+  // A press only becomes a resize once the pointer travels past a threshold —
+  // the couple of pixels a hand moves during a plain click must change nothing.
+  startClient: { x: number; y: number };
+  started: boolean;
 }
 
 interface LabelState {
@@ -241,6 +245,10 @@ export function ResizeHandles() {
   const onMove = (e: PointerEvent) => {
     const d = drag.current;
     if (!d) return;
+    if (!d.started) {
+      if (Math.hypot(e.clientX - d.startClient.x, e.clientY - d.startClient.y) < 4) return;
+      d.started = true;
+    }
     const rc = raycast(e.clientX, e.clientY);
     const s = useScene.getState();
 
@@ -304,7 +312,9 @@ export function ResizeHandles() {
     gizmoState.lastInteractionEnd = performance.now();
     window.removeEventListener("pointermove", onMove);
     window.removeEventListener("pointerup", onUp);
-    if (!d) return;
+    // A click that never became a drag commits nothing; the dimension label
+    // it revealed stays up for editing.
+    if (!d || !d.started) return;
     commitObjects(d.objects);
     setLabel(null);
   };
@@ -322,6 +332,8 @@ export function ResizeHandles() {
       start,
       uniform: e.shiftKey,
       objects,
+      startClient: { x: e.clientX, y: e.clientY },
+      started: false,
     };
     gizmoState.handleActive = true;
     window.addEventListener("pointermove", onMove);
