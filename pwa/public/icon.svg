@@ -1,21 +1,18 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <!-- Sculpo: a solid with a bite carved out — the union/subtract at the
-       heart of the tool, drawn with the app's feature-edge outlines. -->
+  <!-- Refined V-notch: a chisel-cut groove across the top-right ridge -->
   <rect width="512" height="512" fill="#232936"/>
   <g stroke="#2a1518" stroke-width="7" stroke-linejoin="round">
     <!-- left face -->
-    <polygon points="117,190 256,270 256,440 117,360" fill="#b23e3e"/>
-    <!-- right face -->
-    <polygon points="395,190 256,270 256,440 395,360" fill="#d95757"/>
-    <!-- top face -->
-    <polygon points="256,110 395,190 256,270 117,190" fill="#ef8d85"/>
+    <polygon points="117.4,190 256,270 256,440 117.4,360" fill="#b23e3e"/>
+    <!-- right face with the groove crossing its top edge -->
+    <polygon points="394.6,190 364.1,207.6 336.4,285.6 308.7,239.6 256,270 256,440 394.6,360" fill="#d95757"/>
+    <!-- top face with the groove crossing its right edge -->
+    <polygon points="256,110 394.6,190 364.1,207.6 286.2,194.6 308.7,239.6 256,270 117.4,190" fill="#ef8d85"/>
+    <!-- groove walls: lit and shadowed -->
+    <polygon points="364.1,207.6 286.2,194.6 336.4,285.6" fill="#833030"/>
+    <polygon points="286.2,194.6 308.7,239.6 336.4,285.6" fill="#571d1d"/>
   </g>
-  <!-- spherical bite carved from the top-right vertex -->
-  <circle cx="395" cy="190" r="86" fill="#232936"/>
-  <!-- concave inner wall of the bite -->
-  <path d="M 356 258 A 78 78 0 0 1 345 130" fill="none" stroke="#8f2f2f"
-        stroke-width="16" stroke-linecap="round"/>
-  <!-- carving chips -->
-  <polygon points="447,84 468,96 447,108 426,96" fill="#ef8d85" stroke="#2a1518" stroke-width="5" stroke-linejoin="round"/>
-  <polygon points="482,146 496,154 482,162 468,154" fill="#d95757" stroke="#2a1518" stroke-width="4" stroke-linejoin="round"/>
+  <!-- chips -->
+  <polygon points="420,118 443,131 420,144 397,131" fill="#ef8d85" stroke="#2a1518" stroke-width="5" stroke-linejoin="round"/>
+  <polygon points="465,178 480,186.5 465,195 450,186.5" fill="#d95757" stroke="#2a1518" stroke-width="4" stroke-linejoin="round"/>
 </svg>
