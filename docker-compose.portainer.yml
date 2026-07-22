@@ -17,7 +17,7 @@ services:
       retries: 10
 
   api:
-    image: ${IMAGE_PREFIX:-ghcr.io/jwapps-app/stl-modeler}-api:latest
+    image: ${IMAGE_PREFIX:-ghcr.io/jwapps-app/sculpo}-api:latest
     mem_limit: 512m
     environment:
       ENVIRONMENT: production
@@ -36,7 +36,7 @@ services:
         condition: service_healthy
 
   web:
-    image: ${IMAGE_PREFIX:-ghcr.io/jwapps-app/stl-modeler}-web:latest
+    image: ${IMAGE_PREFIX:-ghcr.io/jwapps-app/sculpo}-web:latest
     mem_limit: 128m
     ports:
       - "${APP_PORT:-8220}:80"
