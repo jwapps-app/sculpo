@@ -329,8 +329,10 @@ export function Viewport() {
     >
       <Canvas
         onPointerMissed={(e) => {
-          // Only a plain left-click on empty canvas deselects. Orbiting ends
-          // with a contextmenu/right-button event that also lands here.
+          // Only a plain left-click on the canvas itself deselects. Clicks on
+          // DOM overlays (dimension pills etc.) bubble here too — ignore them,
+          // as well as the contextmenu/right-button events orbiting ends with.
+          if (!(e.target instanceof HTMLCanvasElement)) return;
           if (e.type !== "click" || e.button !== 0) return;
           // A finished marquee or handle drag also ends with a click on empty
           // canvas — don't let that wipe the selection it just made.
