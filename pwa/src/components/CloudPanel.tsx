@@ -3,6 +3,7 @@ import { Cloud, KeyRound, LogOut, Trash2, UserPlus, X } from "lucide-react";
 import { api, type AdminOverview, type ProjectMeta } from "../lib/api";
 import { useScene } from "../state/store";
 import { useAuth } from "../state/auth";
+import { markSynced, syncNow, useCloudSync } from "../state/cloudSync";
 
 // Cloud projects for the signed-in user: list/open/save/delete designs on the
 // server; admins manage users here too. Sign-in itself happens at the gate
@@ -26,6 +27,7 @@ export function CloudPanel() {
   const cloudProjectId = useScene((s) => s.cloudProjectId);
   const setCloudProjectId = useScene((s) => s.setCloudProjectId);
   const loadProject = useScene((s) => s.loadProject);
+  const sync = useCloudSync();
 
   useEffect(() => {
     if (open && status === "signed-in") {
@@ -50,23 +52,12 @@ export function CloudPanel() {
     }
   };
 
-  const saveToCloud = () =>
-    run(async () => {
-      const project = useScene.getState().project;
-      if (cloudProjectId) {
-        await api.updateProject(cloudProjectId, project.name, project);
-      } else {
-        const meta = await api.createProject(project.name, project);
-        setCloudProjectId(meta.id);
-      }
-      setProjects(await api.listProjects());
-      setNotice("Saved.");
-    });
-
   const openFromCloud = (id: string) =>
     run(async () => {
       const full = await api.getProject(id);
       loadProject(full.data, full.id);
+      // Freshly opened = already in sync; don't immediately re-upload it.
+      markSynced(useScene.getState().project);
       setOpen(false);
     });
 
@@ -74,13 +65,30 @@ export function CloudPanel() {
     <div className="relative">
       <button
         onClick={() => setOpen(!open)}
-        title={`Cloud projects (${me.username})`}
+        title={`Cloud projects (${me.username}) — ${
+          sync.status === "saving"
+            ? "saving…"
+            : sync.status === "error"
+              ? `sync problem: ${sync.detail}`
+              : "all changes saved automatically"
+        }`}
         aria-label="Cloud projects"
-        className={`rounded-md p-1.5 ${
+        className={`relative rounded-md p-1.5 ${
           open ? "bg-neutral-800 text-white" : "text-neutral-700 hover:bg-neutral-200"
         }`}
       >
         <Cloud size={17} strokeWidth={1.8} />
+        <span
+          className={`absolute right-0.5 top-0.5 h-2 w-2 rounded-full ${
+            sync.status === "error"
+              ? "bg-red-500"
+              : sync.status === "saving"
+                ? "animate-pulse bg-amber-400"
+                : sync.status === "saved"
+                  ? "bg-green-500"
+                  : "bg-neutral-300"
+          }`}
+        />
       </button>
 
       {open && (
@@ -163,13 +171,33 @@ export function CloudPanel() {
                 </form>
               )}
 
-              <button
-                onClick={saveToCloud}
-                disabled={busy}
-                className="w-full rounded bg-blue-600 px-2 py-1 text-sm text-white hover:bg-blue-700 disabled:opacity-40"
+              <div
+                className={`flex items-center justify-between rounded border px-2 py-1 text-xs ${
+                  sync.status === "error"
+                    ? "border-red-300 bg-red-50 text-red-700"
+                    : "border-neutral-200 text-neutral-500"
+                }`}
               >
-                {cloudProjectId ? "Save (update cloud copy)" : "Save to cloud"}
-              </button>
+                <span>
+                  {sync.status === "saving"
+                    ? "Saving…"
+                    : sync.status === "error"
+                      ? `Sync problem: ${sync.detail}`
+                      : sync.status === "saved"
+                        ? "All changes saved automatically"
+                        : cloudProjectId
+                          ? "In sync — changes save automatically"
+                          : "Changes will save automatically as you work"}
+                </span>
+                {sync.status === "error" && (
+                  <button
+                    onClick={() => void syncNow()}
+                    className="ml-2 rounded border border-red-300 px-1.5 py-0.5 hover:bg-red-100"
+                  >
+                    Retry
+                  </button>
+                )}
+              </div>
               <div className="max-h-44 space-y-1 overflow-y-auto">
                 {projects === null ? (
                   <p className="text-xs text-neutral-400">Loading…</p>

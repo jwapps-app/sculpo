@@ -8,6 +8,7 @@ import { SignInGate } from "./components/SignInGate";
 import { useShortcuts } from "./hooks/useShortcuts";
 import { useAutosave } from "./hooks/useAutosave";
 import { useAuth } from "./state/auth";
+import { startCloudSync } from "./state/cloudSync";
 
 export default function App() {
   useShortcuts();
@@ -16,6 +17,7 @@ export default function App() {
 
   useEffect(() => {
     useAuth.getState().init();
+    return startCloudSync();
   }, []);
 
   // With a backend present, the workspace sits behind sign-in. Without one
