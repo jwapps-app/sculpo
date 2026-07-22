@@ -118,8 +118,10 @@ interface SceneState {
   cruiseMode: boolean;
   placing: PrimitiveKind | null;
   alignMode: boolean;
-  // Which sketch tool dialog is open, if any.
+  // Which sketch tool dialog is open, if any; sketchEditId points at an
+  // existing node being re-edited (null = creating a new shape).
   sketchMode: "scribble" | "extrude" | "revolve" | null;
+  sketchEditId: string | null;
   // Server id of the currently open project, when it came from the cloud.
   cloudProjectId: string | null;
 
@@ -128,6 +130,7 @@ interface SceneState {
   setPlacing: (kind: PrimitiveKind | null) => void;
   setAlignMode: (on: boolean) => void;
   setSketchMode: (mode: "scribble" | "extrude" | "revolve" | null) => void;
+  editSketch: (id: string) => void;
   addShapeWithParams: (kind: PrimitiveKind, params: Record<string, number | string>) => void;
   setCloudProjectId: (id: string | null) => void;
   addImportedMesh: (params: Record<string, string>, name: string) => void;
@@ -181,6 +184,7 @@ export const useScene = create<SceneState>()(
       placing: null,
       alignMode: false,
       sketchMode: null,
+      sketchEditId: null,
       cloudProjectId: null,
 
       addShape: (kind, placement) => {
@@ -270,7 +274,19 @@ export const useScene = create<SceneState>()(
         set({ placing: kind, ...(kind ? { workplaneArmed: false, cruiseMode: false } : {}) }),
 
       setAlignMode: (on) => set({ alignMode: on }),
-      setSketchMode: (mode) => set({ sketchMode: mode }),
+      setSketchMode: (mode) => set({ sketchMode: mode, sketchEditId: null }),
+
+      editSketch: (id) => {
+        const node = get().project.nodes[id];
+        if (!node || isGroup(node) || node.locked) return;
+        const modeFor: Partial<Record<string, "scribble" | "extrude" | "revolve">> = {
+          scribble: "scribble",
+          sketch: "extrude",
+          revolve: "revolve",
+        };
+        const mode = modeFor[node.kind];
+        if (mode) set({ sketchMode: mode, sketchEditId: id, selection: [id] });
+      },
 
       // Sketch tools create fully-parameterized shapes: geometry regenerates
       // from params like any primitive. Placed at a free spot on the floor.
@@ -288,6 +304,7 @@ export const useScene = create<SceneState>()(
           },
           selection: [shape.id],
           sketchMode: null,
+          sketchEditId: null,
         }));
       },
 

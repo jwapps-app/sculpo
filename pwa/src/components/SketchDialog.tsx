@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useScene } from "../state/store";
-import type { Pt } from "../lib/sketchGeometry";
+import { parsePaths, parsePoints, type Pt } from "../lib/sketchGeometry";
+import { isGroup } from "../types/scene";
 
 // 2D sketch editor for the scribble / extrude / revolve tools. Canvas pixels
 // map to millimeters at SCALE px/mm; Y is flipped so up on screen is +Y (or
@@ -21,8 +22,10 @@ const TITLES: Record<Mode, string> = {
 
 export function SketchDialog() {
   const mode = useScene((s) => s.sketchMode);
+  const editId = useScene((s) => s.sketchEditId);
   const setSketchMode = useScene((s) => s.setSketchMode);
   const addShapeWithParams = useScene((s) => s.addShapeWithParams);
+  const updateShape = useScene((s) => s.updateShape);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [strokes, setStrokes] = useState<Pt[][]>([]); // px coords
@@ -32,13 +35,34 @@ export function SketchDialog() {
   const [height, setHeight] = useState(10);
   const drawing = useRef(false);
 
-  // Reset per open.
+  // Reset per open; when re-editing, load the node's stored drawing back into
+  // canvas coordinates (mm → px, Y flipped).
   useEffect(() => {
     setStrokes([]);
     setPoints([]);
     setClosed(false);
     setHeight(mode === "scribble" ? 5 : 10);
-  }, [mode]);
+    if (!mode || !editId) return;
+    const node = useScene.getState().project.nodes[editId];
+    if (!node || isGroup(node)) return;
+    const p = node.params;
+    if (mode === "scribble") {
+      setStrokes(
+        parsePaths(p.paths).map((s) => s.map(([x, y]) => [x * SCALE, H - y * SCALE] as Pt)),
+      );
+      if (typeof p.brush === "number") setBrush(p.brush);
+      if (typeof p.h === "number") setHeight(p.h);
+    } else if (mode === "extrude") {
+      setPoints(parsePoints(p.profile).map(([x, y]) => [x * SCALE, H - y * SCALE] as Pt));
+      setClosed(true);
+      if (typeof p.h === "number") setHeight(p.h);
+    } else {
+      setPoints(
+        parsePoints(p.profile).map(([r, h]) => [AXIS_X + r * SCALE, H - h * SCALE] as Pt),
+      );
+      setClosed(true);
+    }
+  }, [mode, editId]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -163,23 +187,36 @@ export function SketchDialog() {
     mode === "scribble" ? strokes.length > 0 : points.length >= 3;
 
   const create = () => {
+    let kind: "scribble" | "sketch" | "revolve";
+    let params: Record<string, number | string>;
     if (mode === "scribble") {
       // px → mm, Y flipped.
       const paths = strokes.map((s) => s.map(([x, y]) => [x / SCALE, (H - y) / SCALE] as Pt));
-      addShapeWithParams("scribble", {
-        paths: JSON.stringify(paths),
-        brush,
-        h: height,
-      });
+      kind = "scribble";
+      params = { paths: JSON.stringify(paths), brush, h: height };
     } else if (mode === "extrude") {
       const profile = points.map(([x, y]) => [x / SCALE, (H - y) / SCALE] as Pt);
-      addShapeWithParams("sketch", { profile: JSON.stringify(profile), h: height });
+      kind = "sketch";
+      params = { profile: JSON.stringify(profile), h: height };
     } else {
       // x distance from the axis = radius; screen up = +Z height.
       const profile = points.map(
         ([x, y]) => [(x - AXIS_X) / SCALE, (H - y) / SCALE] as Pt,
       );
-      addShapeWithParams("revolve", { profile: JSON.stringify(profile), segments: 48 });
+      kind = "revolve";
+      const editNode = editId ? useScene.getState().project.nodes[editId] : undefined;
+      const existing = editNode && !isGroup(editNode) ? editNode.params : undefined;
+      params = {
+        profile: JSON.stringify(profile),
+        segments:
+          existing && typeof existing.segments === "number" ? existing.segments : 48,
+      };
+    }
+    if (editId) {
+      updateShape(editId, { params });
+      setSketchMode(null);
+    } else {
+      addShapeWithParams(kind, params);
     }
   };
 
@@ -259,7 +296,7 @@ export function SketchDialog() {
             disabled={!canCreate}
             className="rounded bg-blue-600 px-3 py-1 text-sm text-white hover:bg-blue-700 disabled:opacity-40"
           >
-            Create
+            {editId ? "Update" : "Create"}
           </button>
         </div>
       </div>

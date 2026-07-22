@@ -315,6 +315,14 @@ export function Inspector() {
         onCommit={(v) => updateShape(node.id, { scale: v })}
       />
       <ShapeParams node={node} />
+      {["sketch", "revolve", "scribble"].includes(node.kind) && (
+        <button
+          onClick={() => useScene.getState().editSketch(node.id)}
+          className="rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100"
+        >
+          Edit sketch (or double-click the shape)
+        </button>
+      )}
       <FlipRow />
       <LockHideRow />
     </div>

@@ -74,6 +74,19 @@ export function ShapeMesh({ node, dimmed = false }: { node: ShapeNode; dimmed?: 
       scale={node.scale}
       raycast={dimmed ? () => null : undefined}
       onClick={dimmed ? undefined : (e) => handleMeshClick(e, node.id)}
+      onDoubleClick={
+        dimmed
+          ? undefined
+          : (e) => {
+              // Sketch-based shapes reopen their 2D editor.
+              const s = useScene.getState();
+              if (s.workplaneArmed || s.cruiseMode || s.placing) return;
+              if (["sketch", "revolve", "scribble"].includes(node.kind)) {
+                e.stopPropagation();
+                s.editSketch(node.id);
+              }
+            }
+      }
     >
       <meshStandardMaterial
         color={isHole ? "#9aa0a6" : node.color}
