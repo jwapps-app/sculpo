@@ -8,7 +8,7 @@ _PLACEHOLDER_SECRETS = {"dev-secret-change-me", "changeme", "secret", ""}
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    app_name: str = "Modeler"
+    app_name: str = "Sculpo"
     environment: str = "production"
     debug: bool = False
     database_url: str = "postgresql+asyncpg://app:app@db:5432/app"
