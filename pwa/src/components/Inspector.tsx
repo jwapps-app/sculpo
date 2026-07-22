@@ -78,8 +78,8 @@ function VecFields({
   );
 }
 
-// Params that hold encoded mesh data, not user-editable values.
-const HIDDEN_PARAMS = new Set(["pos", "idx"]);
+// Params that hold encoded geometry/sketch data, not user-editable values.
+const HIDDEN_PARAMS = new Set(["pos", "idx", "profile", "paths"]);
 
 function ShapeParams({ node }: { node: ShapeNode }) {
   const updateShape = useScene((s) => s.updateShape);

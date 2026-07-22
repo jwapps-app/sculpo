@@ -1,7 +1,14 @@
+import { Pencil, PenTool, RotateCcw } from "lucide-react";
 import type { PrimitiveKind } from "../types/scene";
 import { shapeIcon } from "../lib/shapeIcons";
 import { useScene } from "../state/store";
 import { SHAPE_DRAG_TYPE } from "./Viewport";
+
+const SKETCH_TOOLS = [
+  { mode: "scribble", label: "Scribble", icon: Pencil },
+  { mode: "extrude", label: "Extrude sketch", icon: PenTool },
+  { mode: "revolve", label: "Revolve sketch", icon: RotateCcw },
+] as const;
 
 const KINDS: { kind: PrimitiveKind; label: string }[] = [
   { kind: "box", label: "Box" },
@@ -23,6 +30,7 @@ const KINDS: { kind: PrimitiveKind; label: string }[] = [
 export function Palette() {
   const setPlacing = useScene((s) => s.setPlacing);
   const placing = useScene((s) => s.placing);
+  const setSketchMode = useScene((s) => s.setSketchMode);
 
   return (
     <div className="flex w-32 flex-col gap-2 overflow-y-auto border-r border-neutral-200 bg-white p-3">
@@ -53,6 +61,22 @@ export function Palette() {
               draggable={false}
               className="h-9 w-9"
             />
+          </button>
+        ))}
+      </div>
+      <div className="mt-1 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+        Sketch
+      </div>
+      <div className="flex flex-col gap-1.5">
+        {SKETCH_TOOLS.map(({ mode, label, icon: Icon }) => (
+          <button
+            key={mode}
+            onClick={() => setSketchMode(mode)}
+            title={label}
+            className="flex items-center gap-2 rounded-md border border-neutral-200 px-2 py-1.5 text-xs hover:border-neutral-300 hover:bg-neutral-100"
+          >
+            <Icon size={14} strokeWidth={1.8} className="shrink-0 text-neutral-600" />
+            {label}
           </button>
         ))}
       </div>

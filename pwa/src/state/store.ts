@@ -118,6 +118,8 @@ interface SceneState {
   cruiseMode: boolean;
   placing: PrimitiveKind | null;
   alignMode: boolean;
+  // Which sketch tool dialog is open, if any.
+  sketchMode: "scribble" | "extrude" | "revolve" | null;
   // Server id of the currently open project, when it came from the cloud.
   cloudProjectId: string | null;
 
@@ -125,6 +127,8 @@ interface SceneState {
   placeShapeAt: (kind: PrimitiveKind, position: Vec3, rotation: Vec3) => void;
   setPlacing: (kind: PrimitiveKind | null) => void;
   setAlignMode: (on: boolean) => void;
+  setSketchMode: (mode: "scribble" | "extrude" | "revolve" | null) => void;
+  addShapeWithParams: (kind: PrimitiveKind, params: Record<string, number | string>) => void;
   setCloudProjectId: (id: string | null) => void;
   addImportedMesh: (params: Record<string, string>, name: string) => void;
   updateShape: (id: string, patch: Partial<Omit<ShapeNode, "id" | "kind">>) => void;
@@ -176,6 +180,7 @@ export const useScene = create<SceneState>()(
       cruiseMode: false,
       placing: null,
       alignMode: false,
+      sketchMode: null,
       cloudProjectId: null,
 
       addShape: (kind, placement) => {
@@ -265,6 +270,27 @@ export const useScene = create<SceneState>()(
         set({ placing: kind, ...(kind ? { workplaneArmed: false, cruiseMode: false } : {}) }),
 
       setAlignMode: (on) => set({ alignMode: on }),
+      setSketchMode: (mode) => set({ sketchMode: mode }),
+
+      // Sketch tools create fully-parameterized shapes: geometry regenerates
+      // from params like any primitive. Placed at a free spot on the floor.
+      addShapeWithParams: (kind, params) => {
+        const shape = makeShape(kind);
+        shape.params = params;
+        const fp = footprint(kind, params);
+        const [fx, fy] = findFreeSpot(fp.halfW, fp.halfD, get().project.rootOrder);
+        shape.position = [fx, fy, fp.bottom];
+        set((st) => ({
+          project: {
+            ...st.project,
+            nodes: { ...st.project.nodes, [shape.id]: shape },
+            rootOrder: [...st.project.rootOrder, shape.id],
+          },
+          selection: [shape.id],
+          sketchMode: null,
+        }));
+      },
+
       setCloudProjectId: (id) => set({ cloudProjectId: id }),
 
       addImportedMesh: (params, name) => {

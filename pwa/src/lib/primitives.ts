@@ -4,6 +4,13 @@ import { TextGeometry } from "three/addons/geometries/TextGeometry.js";
 import type { PrimitiveKind, ShapeNode } from "../types/scene";
 import { newId } from "./id";
 import { decodeMeshGeometry } from "./meshData";
+import {
+  extrudeSketchGeometry,
+  parsePaths,
+  parsePoints,
+  revolveSketchGeometry,
+  scribbleGeometry,
+} from "./sketchGeometry";
 import typefaceData from "../assets/fonts/helvetiker_regular.typeface.json";
 
 let font: Font | null = null;
@@ -33,6 +40,9 @@ export const DEFAULT_PARAMS: Record<
   tube: { r: 10, wall: 3, h: 20, segments: 48 },
   star: { points: 5, r1: 10, r2: 4, h: 5 },
   octagon: { r: 10, h: 20 },
+  sketch: { profile: "[]", h: 10 },
+  revolve: { profile: "[]", segments: 48 },
+  scribble: { paths: "[]", brush: 4, h: 5 },
   mesh: {},
 };
 
@@ -51,6 +61,9 @@ export const PALETTE_COLORS: Record<PrimitiveKind, string> = {
   tube: "#8f5dd6",
   star: "#d6b25d",
   octagon: "#5da8d6",
+  sketch: "#5d7fd6",
+  revolve: "#c97a5d",
+  scribble: "#7a5dd6",
   mesh: "#8d99a6",
 };
 
@@ -224,6 +237,24 @@ export function buildGeometry(node: ShapeNode): THREE.BufferGeometry | null {
       // Flat edge forward, like a stop sign.
       geo.rotateY(Math.PI / 8);
       geo.rotateX(Math.PI / 2);
+      break;
+    }
+    case "sketch": {
+      const built = extrudeSketchGeometry(parsePoints(p.profile), num(p, "h", 10));
+      if (!built) return null;
+      geo = built;
+      break;
+    }
+    case "revolve": {
+      const built = revolveSketchGeometry(parsePoints(p.profile), num(p, "segments", 48));
+      if (!built) return null;
+      geo = built;
+      break;
+    }
+    case "scribble": {
+      const built = scribbleGeometry(parsePaths(p.paths), num(p, "brush", 4), num(p, "h", 5));
+      if (!built) return null;
+      geo = built;
       break;
     }
     case "mesh": {

@@ -17,6 +17,9 @@ export type PrimitiveKind =
   | "tube"
   | "star"
   | "octagon"
+  | "sketch" // 2D profile extruded; profile stored in params
+  | "revolve" // 2D profile lathed around the Z axis
+  | "scribble" // freehand strokes, traced and extruded
   | "mesh"; // imported STL/OBJ/SVG geometry, stored in params
 
 export interface ShapeNode {
