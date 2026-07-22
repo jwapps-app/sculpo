@@ -1,0 +1,44 @@
+# Local/dev full stack. Host ports avoid 5432/5433/8000 (taken on this Mac).
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: app
+    ports:
+      - "5436:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: ./backend
+    environment:
+      ENVIRONMENT: development
+      DEBUG: "true"
+      DATABASE_URL: postgresql+asyncpg://app:app@db:5432/app
+      SECRET_KEY: dev-secret-only-for-local-compose-use!
+      APP_URL: http://localhost:8120
+      ALLOWED_EMAILS: ${ALLOWED_EMAILS:-you@example.com}
+    ports:
+      - "8020:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: pwa/Dockerfile
+    ports:
+      - "8120:80"
+    depends_on:
+      - api
+
+volumes:
+  db-data:

@@ -5,6 +5,11 @@ import { VitePWA } from "vite-plugin-pwa";
 import { APP_NAME, APP_TAGLINE } from "./src/constants/branding.ts";
 
 export default defineConfig({
+  server: {
+    proxy: {
+      "/api": "http://localhost:8020",
+    },
+  },
   plugins: [
     react(),
     tailwindcss(),

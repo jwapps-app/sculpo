@@ -32,6 +32,7 @@ import { isGroup } from "../types/scene";
 import { exportSceneStl } from "../lib/exportStl";
 import { saveProjectFile, parseProjectFile } from "../lib/projectFile";
 import { importMeshFile } from "../lib/importMesh";
+import { CloudPanel } from "./CloudPanel";
 
 const MODES: { mode: TransformMode; label: string; key: string; icon: typeof Move }[] = [
   { mode: "translate", label: "Move", key: "G", icon: Move },
@@ -299,6 +300,7 @@ export function Toolbar() {
         onClick={() => saveProjectFile(useScene.getState().project)}
         label="Save project as JSON"
       />
+      <CloudPanel />
       <span className="mx-0.5" />
       <IconButton icon={Printer} onClick={onExport} accent label="Export STL for printing" />
 

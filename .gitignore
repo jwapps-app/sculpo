@@ -1,3 +1,7 @@
 .DS_Store
 node_modules/
 dist/
+backend/.venv/
+backend/.env
+__pycache__/
+*.log

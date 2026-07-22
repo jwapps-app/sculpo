@@ -1,0 +1,65 @@
+# NAS stack (Portainer, Repository deploy). Image-only — CI builds, the NAS
+# pulls. Env vars are supplied in Portainer's UI; nothing lives on the host.
+services:
+  db:
+    image: postgres:16-alpine
+    mem_limit: 512m
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: app
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api:
+    image: ${IMAGE_PREFIX:-ghcr.io/jwapps-app/stl-modeler}-api:latest
+    mem_limit: 512m
+    environment:
+      ENVIRONMENT: production
+      DATABASE_URL: postgresql+asyncpg://app:${DB_PASSWORD}@db:5432/app
+      SECRET_KEY: ${SECRET_KEY}
+      APP_NAME: ${APP_NAME:-Modeler}
+      APP_URL: ${APP_URL}
+      ALLOWED_EMAILS: ${ALLOWED_EMAILS}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    image: ${IMAGE_PREFIX:-ghcr.io/jwapps-app/stl-modeler}-web:latest
+    mem_limit: 128m
+    ports:
+      - "${APP_PORT:-8220}:80"
+    depends_on:
+      - api
+
+  backup:
+    image: postgres:16-alpine
+    mem_limit: 256m
+    environment:
+      PGPASSWORD: ${DB_PASSWORD}
+    volumes:
+      - backups:/backups
+    entrypoint: >
+      sh -c 'while true; do
+        pg_dump -h db -U app -Fc app | gzip > /backups/app-$$(date +%Y%m%d).dump.gz;
+        find /backups -name "app-*.dump.gz" -mtime +14 -delete;
+        sleep 86400;
+      done'
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  db-data:
+  backups:

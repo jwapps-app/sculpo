@@ -118,11 +118,14 @@ interface SceneState {
   cruiseMode: boolean;
   placing: PrimitiveKind | null;
   alignMode: boolean;
+  // Server id of the currently open project, when it came from the cloud.
+  cloudProjectId: string | null;
 
   addShape: (kind: PrimitiveKind, placement?: Placement) => void;
   placeShapeAt: (kind: PrimitiveKind, position: Vec3, rotation: Vec3) => void;
   setPlacing: (kind: PrimitiveKind | null) => void;
   setAlignMode: (on: boolean) => void;
+  setCloudProjectId: (id: string | null) => void;
   addImportedMesh: (params: Record<string, string>, name: string) => void;
   updateShape: (id: string, patch: Partial<Omit<ShapeNode, "id" | "kind">>) => void;
   setTransform: (id: string, position: Vec3, rotation: Vec3, scale: Vec3) => void;
@@ -136,7 +139,7 @@ interface SceneState {
   groupSelected: () => void;
   ungroupSelected: () => void;
   setProjectName: (name: string) => void;
-  loadProject: (project: Project) => void;
+  loadProject: (project: Project, cloudId?: string | null) => void;
   newProject: () => void;
   toggleLockSelected: () => void;
   hideSelected: () => void;
@@ -173,6 +176,7 @@ export const useScene = create<SceneState>()(
       cruiseMode: false,
       placing: null,
       alignMode: false,
+      cloudProjectId: null,
 
       addShape: (kind, placement) => {
         const shape = makeShape(kind);
@@ -261,6 +265,7 @@ export const useScene = create<SceneState>()(
         set({ placing: kind, ...(kind ? { workplaneArmed: false, cruiseMode: false } : {}) }),
 
       setAlignMode: (on) => set({ alignMode: on }),
+      setCloudProjectId: (id) => set({ cloudProjectId: id }),
 
       addImportedMesh: (params, name) => {
         const shape = makeShape("mesh");
@@ -580,7 +585,7 @@ export const useScene = create<SceneState>()(
 
       setProjectName: (name) => set((s) => ({ project: { ...s.project, name } })),
 
-      loadProject: (project) => {
+      loadProject: (project, cloudId = null) => {
         set({
           project,
           selection: [],
@@ -588,6 +593,7 @@ export const useScene = create<SceneState>()(
           workplaneArmed: false,
           editingGroupId: null,
           smartDup: null,
+          cloudProjectId: cloudId,
         });
         useScene.temporal.getState().clear();
       },
