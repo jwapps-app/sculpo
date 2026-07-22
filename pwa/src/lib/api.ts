@@ -21,12 +21,21 @@ export class ApiError extends Error {
   }
 }
 
+// Lets the auth store react when a session dies mid-use (401 anywhere).
+let onUnauthorized: (() => void) | null = null;
+export function setUnauthorizedHandler(fn: () => void) {
+  onUnauthorized = fn;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   const token = getToken();
   if (token) headers.Authorization = `Bearer ${token}`;
   const res = await fetch(`${BASE}${path}`, { ...init, headers });
-  if (res.status === 401) setToken(null);
+  if (res.status === 401) {
+    setToken(null);
+    onUnauthorized?.();
+  }
   if (!res.ok) {
     let detail = res.statusText;
     try {

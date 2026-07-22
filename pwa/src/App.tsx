@@ -1,14 +1,32 @@
+import { useEffect } from "react";
 import { Toolbar } from "./components/Toolbar";
 import { Palette } from "./components/Palette";
 import { Viewport } from "./components/Viewport";
 import { Inspector } from "./components/Inspector";
 import { SketchDialog } from "./components/SketchDialog";
+import { SignInGate } from "./components/SignInGate";
 import { useShortcuts } from "./hooks/useShortcuts";
 import { useAutosave } from "./hooks/useAutosave";
+import { useAuth } from "./state/auth";
 
 export default function App() {
   useShortcuts();
   useAutosave();
+  const status = useAuth((s) => s.status);
+
+  useEffect(() => {
+    useAuth.getState().init();
+  }, []);
+
+  // With a backend present, the workspace sits behind sign-in. Without one
+  // ("offline"), the standalone tool is open as always.
+  if (status === "checking") {
+    return <div className="h-screen bg-neutral-100" />;
+  }
+  if (status === "signed-out") {
+    return <SignInGate />;
+  }
+
   return (
     <div className="flex h-screen flex-col">
       <Toolbar />

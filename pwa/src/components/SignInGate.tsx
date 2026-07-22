@@ -1,0 +1,77 @@
+import { useState } from "react";
+import { APP_NAME } from "../constants/branding";
+import { useAuth } from "../state/auth";
+
+// Full-screen sign-in gate, shown instead of the workspace whenever a backend
+// is present and nobody is signed in.
+export function SignInGate() {
+  const authenticate = useAuth((s) => s.authenticate);
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [notice, setNotice] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const canSubmit = username.trim().length >= 3 && password.length >= 8 && !busy;
+
+  const submit = async (mode: "login" | "register") => {
+    setBusy(true);
+    setNotice(null);
+    try {
+      await authenticate(mode, username.trim(), password);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "Sign-in failed.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="flex h-screen items-center justify-center bg-neutral-100">
+      <form
+        className="w-72 space-y-3 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (canSubmit) submit("login");
+        }}
+      >
+        <div className="flex items-center justify-center gap-2">
+          <img src="/icon.svg" alt="" className="h-8 w-8 rounded" />
+          <span className="text-lg font-bold">{APP_NAME}</span>
+        </div>
+        <input
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          placeholder="username"
+          autoComplete="username"
+          autoFocus
+          className="w-full rounded border border-neutral-300 px-2 py-1.5 text-sm"
+        />
+        <input
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="password (8+ characters)"
+          autoComplete="current-password"
+          className="w-full rounded border border-neutral-300 px-2 py-1.5 text-sm"
+        />
+        <button
+          type="submit"
+          disabled={!canSubmit}
+          className="w-full rounded bg-blue-600 px-2 py-1.5 text-sm text-white hover:bg-blue-700 disabled:opacity-40"
+        >
+          Sign in
+        </button>
+        <button
+          type="button"
+          onClick={() => submit("register")}
+          disabled={!canSubmit}
+          title="For invited usernames: choose your password now"
+          className="w-full rounded border border-neutral-300 px-2 py-1.5 text-sm hover:bg-neutral-100 disabled:opacity-40"
+        >
+          Create account
+        </button>
+        {notice && <p className="text-xs text-red-600">{notice}</p>}
+      </form>
+    </div>
+  );
+}
