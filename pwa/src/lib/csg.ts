@@ -8,6 +8,40 @@ import { bakeTransform, composeMatrix } from "./transform";
 const evaluator = new Evaluator();
 evaluator.attributes = ["position", "normal"];
 
+// three-bvh-csg returns results in oversized, reused buffers and marks the
+// real span with drawRange. Rendering honors drawRange, but bounds, exports,
+// edge outlines, and snapping read the full attributes — so stale vertices
+// beyond the range would give the shape an invisible phantom extent. Compact
+// the result into exactly-sized buffers of its own.
+function compactEvaluated(geo: THREE.BufferGeometry): THREE.BufferGeometry {
+  const pos = geo.getAttribute("position");
+  if (!pos) return geo;
+  const total = geo.index ? geo.index.count : pos.count;
+  const start = geo.drawRange.start;
+  const end =
+    geo.drawRange.count === Infinity ? total : Math.min(start + geo.drawRange.count, total);
+  if (!geo.index && start === 0 && end === pos.count) return geo; // already tight
+  const n = end - start;
+  const outPos = new Float32Array(n * 3);
+  const normal = geo.getAttribute("normal");
+  const outNorm = normal ? new Float32Array(n * 3) : null;
+  for (let i = 0; i < n; i++) {
+    const v = geo.index ? geo.index.getX(start + i) : start + i;
+    outPos[i * 3] = pos.getX(v);
+    outPos[i * 3 + 1] = pos.getY(v);
+    outPos[i * 3 + 2] = pos.getZ(v);
+    if (outNorm && normal) {
+      outNorm[i * 3] = normal.getX(v);
+      outNorm[i * 3 + 1] = normal.getY(v);
+      outNorm[i * 3 + 2] = normal.getZ(v);
+    }
+  }
+  const out = new THREE.BufferGeometry();
+  out.setAttribute("position", new THREE.BufferAttribute(outPos, 3));
+  if (outNorm) out.setAttribute("normal", new THREE.BufferAttribute(outNorm, 3));
+  return out;
+}
+
 // Evaluates a group per the Tinkercad rule: union of solid children minus the
 // union of hole children. Nested groups evaluate innermost-first and count as
 // solid children. The result is in the group's local space (children keep
@@ -55,7 +89,7 @@ export function evaluateGroup(
   for (const hole of holes) {
     solid = evaluator.evaluate(solid, hole, SUBTRACTION);
   }
-  return solid.geometry;
+  return compactEvaluated(solid.geometry);
 }
 
 // Signature of everything that affects a group's evaluated geometry. The
