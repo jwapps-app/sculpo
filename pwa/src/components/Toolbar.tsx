@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { APP_NAME } from "../constants/branding";
 import { AXIS_COLORS } from "../constants/ui";
+import { SNAP_STEPS } from "../lib/units";
 import { useScene, undo, redo } from "../state/store";
 import type { TransformMode } from "../state/store";
 import { isGroup } from "../types/scene";
@@ -98,6 +99,8 @@ export function Toolbar() {
   const setSnap = useScene((s) => s.setSnap);
   const snapStep = useScene((s) => s.snapStep);
   const setSnapStep = useScene((s) => s.setSnapStep);
+  const units = useScene((s) => s.units);
+  const setUnits = useScene((s) => s.setUnits);
   const workplaneArmed = useScene((s) => s.workplaneArmed);
   const workplaneSet = useScene((s) => s.workplane !== null);
   const setWorkplaneArmed = useScene((s) => s.setWorkplaneArmed);
@@ -181,14 +184,23 @@ export function Toolbar() {
       <select
         value={snapStep}
         onChange={(e) => setSnapStep(Number(e.target.value))}
-        title="Snap grid size"
+        title={`Snap grid size (${units})`}
         className="rounded border border-neutral-300 px-0.5 py-0.5 text-xs text-neutral-600"
       >
-        {[0.1, 0.25, 0.5, 1, 2, 5].map((v) => (
-          <option key={v} value={v}>
-            {v}
+        {SNAP_STEPS[units].map(({ value, label }) => (
+          <option key={value} value={value}>
+            {label}
           </option>
         ))}
+      </select>
+      <select
+        value={units}
+        onChange={(e) => setUnits(e.target.value as "mm" | "in")}
+        title="Measurement units"
+        className="rounded border border-neutral-300 px-0.5 py-0.5 text-xs text-neutral-600"
+      >
+        <option value="mm">mm</option>
+        <option value="in">in</option>
       </select>
 
       <IconButton

@@ -1,5 +1,11 @@
 import * as THREE from "three";
 import { AXIS_COLORS } from "../constants/ui";
+import {
+  COUNT_PARAMS,
+  fromDisplay as mmFromDisplay,
+  toDisplay as mmToDisplay,
+  type Units,
+} from "../lib/units";
 import type { ShapeNode, Vec3 } from "../types/scene";
 import { isGroup } from "../types/scene";
 import { useScene } from "../state/store";
@@ -83,6 +89,7 @@ const HIDDEN_PARAMS = new Set(["pos", "idx", "profile", "paths"]);
 
 function ShapeParams({ node }: { node: ShapeNode }) {
   const updateShape = useScene((s) => s.updateShape);
+  const units = useScene((s) => s.units);
   const numericKeys = Object.keys(node.params).filter(
     (k) => typeof node.params[k] === "number" && !HIDDEN_PARAMS.has(k),
   );
@@ -93,7 +100,7 @@ function ShapeParams({ node }: { node: ShapeNode }) {
   return (
     <div className="space-y-1">
       <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
-        {node.kind} params (mm)
+        {node.kind} params ({units})
       </div>
       {stringKeys.map((key) => (
         <label key={key} className="flex items-center justify-between gap-2 text-sm">
@@ -109,21 +116,29 @@ function ShapeParams({ node }: { node: ShapeNode }) {
           />
         </label>
       ))}
-      {numericKeys.map((key) => (
-        <label key={key} className="flex items-center justify-between gap-2 text-sm">
-          <span className="text-neutral-500">{key}</span>
-          <input
-            type="number"
-            value={node.params[key] as number}
-            onChange={(e) => {
-              const v = Number(e.target.value);
-              if (!Number.isFinite(v) || v <= 0) return;
-              updateShape(node.id, { params: { ...node.params, [key]: v } });
-            }}
-            className="w-20 rounded border border-neutral-300 px-1.5 py-0.5 text-right text-sm"
-          />
-        </label>
-      ))}
+      {numericKeys.map((key) => {
+        const isCount = COUNT_PARAMS.has(key);
+        const u: Units = isCount ? "mm" : units; // counts pass through untouched
+        const raw = node.params[key] as number;
+        return (
+          <label key={key} className="flex items-center justify-between gap-2 text-sm">
+            <span className="text-neutral-500">{key}</span>
+            <input
+              type="number"
+              value={isCount ? raw : Number(mmToDisplay(raw, u).toFixed(3))}
+              step={isCount || u === "mm" ? 1 : 0.125}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                if (!Number.isFinite(v) || v <= 0) return;
+                updateShape(node.id, {
+                  params: { ...node.params, [key]: isCount ? v : mmFromDisplay(v, u) },
+                });
+              }}
+              className="w-20 rounded border border-neutral-300 px-1.5 py-0.5 text-right text-sm"
+            />
+          </label>
+        );
+      })}
     </div>
   );
 }
@@ -203,6 +218,7 @@ export function Inspector() {
   const nodes = useScene((s) => s.project.nodes);
   const updateShape = useScene((s) => s.updateShape);
   const setTransform = useScene((s) => s.setTransform);
+  const units = useScene((s) => s.units);
 
   const selected = selection.map((id) => nodes[id]).filter((n) => !!n);
 
@@ -235,8 +251,11 @@ export function Inspector() {
           Group · {group.childIds.length} children
         </div>
         <VecFields
-          title="Position (mm)"
+          title={`Position (${units})`}
           value={group.position}
+          step={units === "in" ? 0.125 : 1}
+          toDisplay={(v) => mmToDisplay(v, units)}
+          fromDisplay={(v) => mmFromDisplay(v, units)}
           onCommit={(v) => setTransform(group.id, v, group.rotation, group.scale)}
         />
         <VecFields
@@ -296,8 +315,11 @@ export function Inspector() {
       </label>
 
       <VecFields
-        title="Position (mm)"
+        title={`Position (${units})`}
         value={node.position}
+        step={units === "in" ? 0.125 : 1}
+        toDisplay={(v) => mmToDisplay(v, units)}
+        fromDisplay={(v) => mmFromDisplay(v, units)}
         onCommit={(v) => updateShape(node.id, { position: v })}
       />
       <VecFields

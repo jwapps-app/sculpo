@@ -4,6 +4,7 @@ import * as THREE from "three";
 import { useScene } from "../state/store";
 import { sceneApi } from "../lib/sceneApi";
 import { gizmoState } from "../lib/gizmoState";
+import { formatLength } from "../lib/units";
 import type { Vec3 } from "../types/scene";
 
 interface HandleDef {
@@ -184,7 +185,7 @@ export function ResizeHandles() {
 
     const size = d.bbox.getSize(new THREE.Vector3());
     s.setDragInfo(
-      `${(size.x * sx).toFixed(1)} × ${(size.y * sy).toFixed(1)} × ${(size.z * sz).toFixed(1)} mm`,
+      `${formatLength(size.x * sx, s.units)} × ${formatLength(size.y * sy, s.units)} × ${formatLength(size.z * sz, s.units)} ${s.units}`,
     );
   };
 

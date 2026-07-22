@@ -8,6 +8,7 @@ import { newId } from "../lib/id";
 import { composeMatrix, decomposeMatrix } from "../lib/transform";
 import { workplaneNormal, type Workplane } from "../lib/workplane";
 import { sceneApi } from "../lib/sceneApi";
+import { DEFAULT_STEP, type Units } from "../lib/units";
 
 export type TransformMode = "translate" | "rotate" | "scale";
 export type AlignMode = "min" | "center" | "max";
@@ -109,6 +110,7 @@ interface SceneState {
   transformMode: TransformMode;
   snap: boolean;
   snapStep: number;
+  units: Units;
   workplane: Workplane | null;
   workplaneArmed: boolean;
   dragInfo: string | null;
@@ -159,6 +161,7 @@ interface SceneState {
   setTransformMode: (mode: TransformMode) => void;
   setSnap: (snap: boolean) => void;
   setSnapStep: (step: number) => void;
+  setUnits: (units: Units) => void;
   setWorkplane: (wp: Workplane | null) => void;
   setWorkplaneArmed: (armed: boolean) => void;
   setDragInfo: (info: string | null) => void;
@@ -173,7 +176,8 @@ export const useScene = create<SceneState>()(
       selection: [],
       transformMode: "translate",
       snap: true,
-      snapStep: 1,
+      snapStep: localStorage.getItem("units") === "in" ? DEFAULT_STEP.in : DEFAULT_STEP.mm,
+      units: (localStorage.getItem("units") === "in" ? "in" : "mm") as Units,
       workplane: null,
       workplaneArmed: false,
       dragInfo: null,
@@ -697,6 +701,10 @@ export const useScene = create<SceneState>()(
       setTransformMode: (mode) => set({ transformMode: mode }),
       setSnap: (snap) => set({ snap }),
       setSnapStep: (step) => set({ snapStep: step }),
+      setUnits: (units) => {
+        localStorage.setItem("units", units);
+        set({ units, snapStep: DEFAULT_STEP[units] });
+      },
       setWorkplane: (wp) => set({ workplane: wp, workplaneArmed: false }),
       setWorkplaneArmed: (armed) => set({ workplaneArmed: armed }),
       setDragInfo: (info) => set({ dragInfo: info }),
