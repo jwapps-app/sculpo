@@ -53,23 +53,24 @@ export function AlignDots() {
     if (!active) setHover(null);
   }, [active]);
 
-  const selectionBounds = (): THREE.Box3 | null => {
-    const box = new THREE.Box3();
-    let any = false;
+  // Dots whose alignment would move nothing are shown gray and inert, like
+  // Tinkercad. Recomputed each frame alongside dot positions.
+  const inert = useRef<Set<string>>(new Set());
+
+  const itemBounds = (): THREE.Box3[] => {
+    const out: THREE.Box3[] = [];
     for (const id of ids) {
       const b = sceneApi.getNodeBounds(id);
-      if (b) {
-        box.union(b);
-        any = true;
-      }
+      if (b) out.push(b);
     }
-    return any ? box : null;
+    return out;
   };
 
   useFrame(() => {
     const g = group.current;
     if (!g) return;
-    const box = active ? selectionBounds() : null;
+    const items = active ? itemBounds() : [];
+    const box = items.length >= 2 ? items.reduce((u, b) => u.union(b), new THREE.Box3()) : null;
     g.visible = !!box;
     if (!box) return;
     const c = box.getCenter(new THREE.Vector3());
@@ -82,8 +83,23 @@ export function AlignDots() {
       if (def.axis === 0) mesh.position.set(v, box.min.y - off, box.min.z);
       else if (def.axis === 1) mesh.position.set(box.min.x - off, v, box.min.z);
       else mesh.position.set(box.min.x - off, box.min.y - off, v);
-      const hovered = hover?.key === def.key;
+
+      const values = items.map((b) => boundsValue(b, def.axis, def.mode));
+      const target =
+        def.mode === "min"
+          ? Math.min(...values)
+          : def.mode === "max"
+            ? Math.max(...values)
+            : values.reduce((s, x) => s + x, 0) / values.length;
+      const moves = values.some((x) => Math.abs(target - x) > 0.05);
+      if (moves) inert.current.delete(def.key);
+      else inert.current.add(def.key);
+
+      const hovered = hover?.key === def.key && moves;
       mesh.scale.setScalar(Math.max(dist * (hovered ? 0.013 : 0.009), 0.4));
+      const mat = mesh.material as THREE.MeshBasicMaterial;
+      mat.color.set(moves ? AXIS_COLORS[def.axis] : "#b8bcc2");
+      mat.opacity = moves ? (hovered ? 1 : 0.85) : 0.5;
     }
   });
 
@@ -126,10 +142,12 @@ export function AlignDots() {
             renderOrder={999}
             onClick={(e) => {
               e.stopPropagation();
+              if (inert.current.has(def.key)) return;
               alignSelected(def.axis, def.mode);
             }}
             onPointerOver={(e) => {
               e.stopPropagation();
+              if (inert.current.has(def.key)) return;
               setHover(def);
               gizmoState.handleActive = true;
             }}

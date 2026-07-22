@@ -60,12 +60,15 @@ export function ResizeHandles() {
   const nodes = useScene((s) => s.project.nodes);
   const mode = useScene((s) => s.transformMode);
   const workplaneArmed = useScene((s) => s.workplaneArmed);
+  const alignMode = useScene((s) => s.alignMode);
 
   const ids = useMemo(
     () => selection.filter((id) => nodes[id] && !nodes[id].locked && !nodes[id].hidden),
     [selection, nodes],
   );
-  const visible = ids.length > 0 && mode !== "rotate" && !workplaneArmed;
+  // Align mode shows only the align dots — handles would overlap and steal
+  // their clicks.
+  const visible = ids.length > 0 && mode !== "rotate" && !workplaneArmed && !alignMode;
 
   const group = useRef<THREE.Group>(null);
   const drag = useRef<DragState | null>(null);
