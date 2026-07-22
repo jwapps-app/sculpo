@@ -12,6 +12,13 @@ export function SignInGate() {
   const [busy, setBusy] = useState(false);
 
   const canSubmit = username.trim().length >= 3 && password.length >= 8 && !busy;
+  // Say WHY the buttons are disabled instead of leaving them mysteriously gray.
+  const hint =
+    username.trim().length > 0 && username.trim().length < 3
+      ? "Usernames need at least 3 characters."
+      : password.length > 0 && password.length < 8
+        ? "Passwords need at least 8 characters."
+        : null;
 
   const submit = async (mode: "login" | "register") => {
     setBusy(true);
@@ -70,6 +77,7 @@ export function SignInGate() {
         >
           Create account
         </button>
+        {hint && <p className="text-xs text-neutral-500">{hint}</p>}
         {notice && <p className="text-xs text-red-600">{notice}</p>}
       </form>
     </div>

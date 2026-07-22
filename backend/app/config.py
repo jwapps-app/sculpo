@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _PLACEHOLDER_SECRETS = {"dev-secret-change-me", "changeme", "secret", ""}
@@ -18,7 +19,12 @@ class Settings(BaseSettings):
 
     # Comma-separated admin usernames. Admins can always register and manage
     # other users from the UI; everyone else needs an invite created there.
-    admin_users: str = ""
+    # ALLOWED_USERS is accepted as a legacy alias so stacks configured before
+    # the rename keep working.
+    admin_users: str = Field(
+        default="",
+        validation_alias=AliasChoices("ADMIN_USERS", "ALLOWED_USERS"),
+    )
 
     session_ttl_days: int = 90
 
@@ -41,6 +47,11 @@ class Settings(BaseSettings):
                 raise RuntimeError(
                     "Refusing to start: SECRET_KEY is missing or a placeholder. "
                     "Set a strong 32+ character secret."
+                )
+            if not self.admin_user_set:
+                raise RuntimeError(
+                    "Refusing to start: ADMIN_USERS is empty — nobody would be able "
+                    "to sign in. Set at least one admin username."
                 )
 
 
