@@ -8,11 +8,14 @@ import { bakeTransform, composeMatrix } from "./transform";
 const evaluator = new Evaluator();
 evaluator.attributes = ["position", "normal"];
 
-// three-bvh-csg returns results in oversized, reused buffers and marks the
-// real span with drawRange. Rendering honors drawRange, but bounds, exports,
-// edge outlines, and snapping read the full attributes — so stale vertices
-// beyond the range would give the shape an invisible phantom extent. Compact
-// the result into exactly-sized buffers of its own.
+// Booleans on real-world meshes leave two kinds of trash in their output:
+// stale vertices beyond drawRange (three-bvh-csg reuses oversized buffers)
+// and degenerate sliver triangles along cut planes — invisible, but they
+// stretch the bounding box, so drop-to-workplane, align, measure, and
+// placement all see a phantom extent where removed material used to be.
+// Rebuild the result keeping only real triangles in exactly-sized buffers.
+const MIN_TRIANGLE_AREA = 1e-4; // mm² — far below anything visible/printable
+
 function compactEvaluated(geo: THREE.BufferGeometry): THREE.BufferGeometry {
   const pos = geo.getAttribute("position");
   if (!pos) return geo;
@@ -20,25 +23,45 @@ function compactEvaluated(geo: THREE.BufferGeometry): THREE.BufferGeometry {
   const start = geo.drawRange.start;
   const end =
     geo.drawRange.count === Infinity ? total : Math.min(start + geo.drawRange.count, total);
-  if (!geo.index && start === 0 && end === pos.count) return geo; // already tight
-  const n = end - start;
-  const outPos = new Float32Array(n * 3);
   const normal = geo.getAttribute("normal");
-  const outNorm = normal ? new Float32Array(n * 3) : null;
-  for (let i = 0; i < n; i++) {
-    const v = geo.index ? geo.index.getX(start + i) : start + i;
-    outPos[i * 3] = pos.getX(v);
-    outPos[i * 3 + 1] = pos.getY(v);
-    outPos[i * 3 + 2] = pos.getZ(v);
-    if (outNorm && normal) {
-      outNorm[i * 3] = normal.getX(v);
-      outNorm[i * 3 + 1] = normal.getY(v);
-      outNorm[i * 3 + 2] = normal.getZ(v);
+  const maxVerts = end - start;
+  const outPos = new Float32Array(maxVerts * 3);
+  const outNorm = normal ? new Float32Array(maxVerts * 3) : null;
+  let w = 0; // vertices written
+  const p = [0, 0, 0, 0, 0, 0, 0, 0, 0];
+  for (let i = start; i + 2 < end; i += 3) {
+    for (let k = 0; k < 3; k++) {
+      const v = geo.index ? geo.index.getX(i + k) : i + k;
+      p[k * 3] = pos.getX(v);
+      p[k * 3 + 1] = pos.getY(v);
+      p[k * 3 + 2] = pos.getZ(v);
+    }
+    const ux = p[3] - p[0];
+    const uy = p[4] - p[1];
+    const uz = p[5] - p[2];
+    const vx = p[6] - p[0];
+    const vy = p[7] - p[1];
+    const vz = p[8] - p[2];
+    const nx = uy * vz - uz * vy;
+    const ny = uz * vx - ux * vz;
+    const nz = ux * vy - uy * vx;
+    if (0.5 * Math.hypot(nx, ny, nz) < MIN_TRIANGLE_AREA) continue; // sliver
+    for (let k = 0; k < 3; k++) {
+      const v = geo.index ? geo.index.getX(i + k) : i + k;
+      outPos[w * 3] = p[k * 3];
+      outPos[w * 3 + 1] = p[k * 3 + 1];
+      outPos[w * 3 + 2] = p[k * 3 + 2];
+      if (outNorm && normal) {
+        outNorm[w * 3] = normal.getX(v);
+        outNorm[w * 3 + 1] = normal.getY(v);
+        outNorm[w * 3 + 2] = normal.getZ(v);
+      }
+      w++;
     }
   }
   const out = new THREE.BufferGeometry();
-  out.setAttribute("position", new THREE.BufferAttribute(outPos, 3));
-  if (outNorm) out.setAttribute("normal", new THREE.BufferAttribute(outNorm, 3));
+  out.setAttribute("position", new THREE.BufferAttribute(outPos.subarray(0, w * 3), 3));
+  if (outNorm) out.setAttribute("normal", new THREE.BufferAttribute(outNorm.subarray(0, w * 3), 3));
   return out;
 }
 

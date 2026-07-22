@@ -30,6 +30,9 @@ export function SceneRig() {
 
   useEffect(() => {
     if (!controls) return;
+    if (import.meta.env.DEV) {
+      (window as unknown as { __threeScene?: THREE.Scene }).__threeScene = scene;
+    }
 
     const findNodeObject = (id: string): THREE.Object3D | null => {
       let found: THREE.Object3D | null = null;
