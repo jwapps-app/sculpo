@@ -25,6 +25,7 @@ export function Gizmo() {
   const nodes = useScene((s) => s.project.nodes);
   const setTransforms = useScene((s) => s.setTransforms);
   const alignMode = useScene((s) => s.alignMode);
+  const measureMode = useScene((s) => s.measureMode);
   const setDragInfo = useScene((s) => s.setDragInfo);
 
   const pivot = useMemo(() => new THREE.Object3D(), []);
@@ -64,8 +65,8 @@ export function Gizmo() {
     };
   });
 
-  // Align mode shows only the align dots.
-  if (ids.length === 0 || alignMode) return null;
+  // Align and measure modes keep the scene free of grabbable gizmos.
+  if (ids.length === 0 || alignMode || measureMode) return null;
 
   const collectObjects = () => {
     const out: DragState["objects"] = [];

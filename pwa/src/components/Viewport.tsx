@@ -12,7 +12,9 @@ import { GroupMesh } from "./GroupMesh";
 import { Gizmo } from "./Gizmo";
 import { ResizeHandles } from "./ResizeHandles";
 import { AlignDots } from "./AlignDots";
+import { MeasureOverlay } from "./MeasureOverlay";
 import { PlacementPreview } from "./PlacementPreview";
+import { measureState } from "../lib/measure";
 import { SceneRig } from "./SceneRig";
 import { placementState } from "../lib/placement";
 
@@ -213,11 +215,26 @@ export function Viewport() {
   const wrapper = useRef<HTMLDivElement>(null);
   const cruiseMode = useScene((s) => s.cruiseMode);
   const placing = useScene((s) => s.placing);
+  const measureMode = useScene((s) => s.measureMode);
 
   const onPointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
     if (!(e.target instanceof HTMLCanvasElement)) return;
     const s = useScene.getState();
+    if (s.measureMode) {
+      const snap = sceneApi.measureSnap(e.clientX, e.clientY);
+      if (snap) {
+        const p = new THREE.Vector3(...snap.point);
+        if (!measureState.p1 || measureState.p2) {
+          // First point, or starting a fresh measurement after a finished one.
+          measureState.p1 = p;
+          measureState.p2 = null;
+        } else {
+          measureState.p2 = p;
+        }
+      }
+      return;
+    }
     if (s.placing) {
       if (placementState.valid) {
         const eu = new THREE.Euler().setFromQuaternion(placementState.quaternion, "XYZ");
@@ -248,7 +265,14 @@ export function Viewport() {
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
-    if (useScene.getState().placing) {
+    const sNow = useScene.getState();
+    if (sNow.measureMode) {
+      const snap = sceneApi.measureSnap(e.clientX, e.clientY);
+      measureState.hover = snap ? new THREE.Vector3(...snap.point) : null;
+      measureState.hoverSnapped = !!snap?.snapped;
+      return;
+    }
+    if (sNow.placing) {
       sceneApi.placementMove(e.clientX, e.clientY);
       return;
     }
@@ -348,6 +372,7 @@ export function Viewport() {
             s.setAlignMode(false);
             return;
           }
+          if (s.measureMode) return; // clicks are measurement points
           clearSelection();
         }}
         className="bg-neutral-100"
@@ -398,6 +423,7 @@ export function Viewport() {
         <Gizmo />
         <ResizeHandles />
         <AlignDots />
+        <MeasureOverlay />
         <PlacementPreview />
         <OrbitControls
           makeDefault
@@ -425,6 +451,11 @@ export function Viewport() {
       {placing && (
         <div className="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 rounded bg-neutral-800/90 px-3 py-1 text-xs text-white">
           Click to place the shape — it snaps against nearby objects · Esc to cancel
+        </div>
+      )}
+      {measureMode && (
+        <div className="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 rounded bg-neutral-800/90 px-3 py-1 text-xs text-white">
+          Measure: click two points — corners and midpoints snap · M or Esc to exit
         </div>
       )}
       {cruiseMode && !workplaneArmed && !placing && (

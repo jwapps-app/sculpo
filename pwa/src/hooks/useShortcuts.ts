@@ -74,6 +74,9 @@ export function useShortcuts() {
         case "l":
           if (s.alignMode || s.selection.length >= 2) s.setAlignMode(!s.alignMode);
           break;
+        case "m":
+          s.setMeasureMode(!s.measureMode);
+          break;
         case "d":
           s.dropSelectedToWorkplane();
           break;
@@ -113,6 +116,7 @@ export function useShortcuts() {
           else if (s.placing) s.setPlacing(null);
           else if (s.workplaneArmed) s.setWorkplaneArmed(false);
           else if (s.alignMode) s.setAlignMode(false);
+          else if (s.measureMode) s.setMeasureMode(false);
           else if (s.cruiseMode) s.setCruiseMode(false);
           else if (s.editingGroupId) s.setEditingGroup(null);
           else s.clearSelection();

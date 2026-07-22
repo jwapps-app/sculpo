@@ -29,6 +29,13 @@ export const sceneApi = {
   // over other shapes' faces, else the floor/workplane, with magnetic
   // edge-snapping against neighbors.
   placementMove: (_clientX: number, _clientY: number): void => {},
+  // Measure tool: the point under the cursor, snapped to bounding-box
+  // features (corners, edge midpoints, face centers) when close to one, else
+  // a surface or floor point. snapped reports which case hit.
+  measureSnap: (
+    _clientX: number,
+    _clientY: number,
+  ): { point: [number, number, number]; snapped: boolean } | null => null,
 };
 
 declare global {

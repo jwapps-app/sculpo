@@ -120,6 +120,7 @@ interface SceneState {
   cruiseMode: boolean;
   placing: PrimitiveKind | null;
   alignMode: boolean;
+  measureMode: boolean;
   // Which sketch tool dialog is open, if any; sketchEditId points at an
   // existing node being re-edited (null = creating a new shape).
   sketchMode: "scribble" | "extrude" | "revolve" | null;
@@ -131,6 +132,7 @@ interface SceneState {
   placeShapeAt: (kind: PrimitiveKind, position: Vec3, rotation: Vec3) => void;
   setPlacing: (kind: PrimitiveKind | null) => void;
   setAlignMode: (on: boolean) => void;
+  setMeasureMode: (on: boolean) => void;
   setSketchMode: (mode: "scribble" | "extrude" | "revolve" | null) => void;
   editSketch: (id: string) => void;
   addShapeWithParams: (kind: PrimitiveKind, params: Record<string, number | string>) => void;
@@ -187,6 +189,7 @@ export const useScene = create<SceneState>()(
       cruiseMode: false,
       placing: null,
       alignMode: false,
+      measureMode: false,
       sketchMode: null,
       sketchEditId: null,
       cloudProjectId: null,
@@ -277,7 +280,9 @@ export const useScene = create<SceneState>()(
       setPlacing: (kind) =>
         set({ placing: kind, ...(kind ? { workplaneArmed: false, cruiseMode: false } : {}) }),
 
-      setAlignMode: (on) => set({ alignMode: on }),
+      setAlignMode: (on) => set({ alignMode: on, ...(on ? { measureMode: false } : {}) }),
+      setMeasureMode: (on) =>
+        set({ measureMode: on, ...(on ? { alignMode: false, cruiseMode: false } : {}) }),
       setSketchMode: (mode) => set({ sketchMode: mode, sketchEditId: null }),
 
       editSketch: (id) => {

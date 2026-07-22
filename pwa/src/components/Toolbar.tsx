@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import {
   AlignStartVertical,
+  ArrowDownToLine,
   Copy,
   Eye,
   FilePlus2,
@@ -16,6 +17,7 @@ import {
   Move,
   Printer,
   RotateCw,
+  Ruler,
   Save,
   Scaling,
   Trash2,
@@ -106,6 +108,9 @@ export function Toolbar() {
   const setWorkplaneArmed = useScene((s) => s.setWorkplaneArmed);
   const cruiseMode = useScene((s) => s.cruiseMode);
   const setCruiseMode = useScene((s) => s.setCruiseMode);
+  const measureMode = useScene((s) => s.measureMode);
+  const setMeasureMode = useScene((s) => s.setMeasureMode);
+  const dropSelectedToWorkplane = useScene((s) => s.dropSelectedToWorkplane);
   const selection = useScene((s) => s.selection);
   const nodes = useScene((s) => s.project.nodes);
   const projectId = useScene((s) => s.project.id);
@@ -216,6 +221,12 @@ export function Toolbar() {
         onClick={() => setCruiseMode(!cruiseMode)}
         label="Cruise (C) — drag a shape along other surfaces to place it"
       />
+      <IconButton
+        icon={Ruler}
+        active={measureMode}
+        onClick={() => setMeasureMode(!measureMode)}
+        label="Measure (M) — click two points; corners and midpoints snap"
+      />
 
       <Divider />
 
@@ -273,6 +284,12 @@ export function Toolbar() {
         onClick={duplicateSelected}
         disabled={!hasSelection}
         label="Duplicate (⌘D) — repeat after moving a copy to make a pattern"
+      />
+      <IconButton
+        icon={ArrowDownToLine}
+        onClick={dropSelectedToWorkplane}
+        disabled={!hasSelection}
+        label="Drop to workplane (D) — seat the selection on the plane"
       />
       <IconButton icon={Trash2} onClick={deleteSelected} disabled={!hasSelection} label="Delete (⌫)" />
       <IconButton

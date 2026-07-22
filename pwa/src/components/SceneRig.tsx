@@ -290,6 +290,60 @@ export function SceneRig() {
       placementState.valid = true;
     };
 
+    // 27 bounding-box feature points per object: corners, edge midpoints,
+    // face centers, and the center itself.
+    const boxFeaturePoints = (b: THREE.Box3): THREE.Vector3[] => {
+      const xs = [b.min.x, (b.min.x + b.max.x) / 2, b.max.x];
+      const ys = [b.min.y, (b.min.y + b.max.y) / 2, b.max.y];
+      const zs = [b.min.z, (b.min.z + b.max.z) / 2, b.max.z];
+      const pts: THREE.Vector3[] = [];
+      for (const x of xs) for (const y of ys) for (const z of zs) pts.push(new THREE.Vector3(x, y, z));
+      return pts;
+    };
+
+    sceneApi.measureSnap = (clientX, clientY) => {
+      const s = useScene.getState();
+      const rect = gl.domElement.getBoundingClientRect();
+      const SNAP_PX = 14;
+      let best: THREE.Vector3 | null = null;
+      let bestDist = SNAP_PX;
+      const v = new THREE.Vector3();
+      for (const id of s.project.rootOrder) {
+        const node = s.project.nodes[id];
+        if (!node || node.hidden) continue;
+        const b = sceneApi.getNodeBounds(id);
+        if (!b) continue;
+        for (const p of boxFeaturePoints(b)) {
+          v.copy(p).project(camera);
+          if (v.z > 1) continue; // behind the camera
+          const sx = rect.left + ((v.x + 1) / 2) * rect.width;
+          const sy = rect.top + ((1 - v.y) / 2) * rect.height;
+          const d = Math.hypot(sx - clientX, sy - clientY);
+          if (d < bestDist) {
+            bestDist = d;
+            best = p.clone();
+          }
+        }
+      }
+      if (best) return { point: best.toArray() as [number, number, number], snapped: true };
+
+      // No feature nearby: fall back to the surface under the cursor, then
+      // the floor plane (grid-snapped when snapping is on).
+      const raycaster = new THREE.Raycaster();
+      raycaster.setFromCamera(clientToNdc(clientX, clientY), camera);
+      const hit = raycaster.intersectObjects(nodeMeshes(), false).find((h) => h.face);
+      if (hit) return { point: hit.point.toArray() as [number, number, number], snapped: false };
+      const p = new THREE.Vector3();
+      if (!raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 0, 1), 0), p)) {
+        return null;
+      }
+      if (s.snap) {
+        p.x = Math.round(p.x / s.snapStep) * s.snapStep;
+        p.y = Math.round(p.y / s.snapStep) * s.snapStep;
+      }
+      return { point: p.toArray() as [number, number, number], snapped: false };
+    };
+
     sceneApi.readNodeTransform = (id) => {
       const obj = findNodeObject(id);
       if (!obj) return null;
@@ -311,6 +365,7 @@ export function SceneRig() {
       sceneApi.cruiseMove = () => {};
       sceneApi.readNodeTransform = () => null;
       sceneApi.placementMove = () => {};
+      sceneApi.measureSnap = () => null;
     };
   }, [camera, controls, gl, scene]);
 
