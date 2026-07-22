@@ -38,8 +38,17 @@ const HANDLE_EDGES = new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1));
 
 type Axis = 0 | 1 | 2;
 
-// Which dimensions a handle controls (and shows while hovered).
+// Hover/edit: a mid-edge handle owns the dimension of the line it sits on
+// (the axis the edge runs along), so clicking it edits that edge's length.
 function dimsFor(def: HandleDef): Axis[] {
+  if (def.kind === "top") return [2];
+  if (def.kind === "corner") return [0, 1];
+  return def.dir[0] !== 0 ? [1] : [0];
+}
+
+// Dragging is physical: it pushes the face outward, changing the axis
+// perpendicular to that edge — the live readout shows what the drag changes.
+function dragDimsFor(def: HandleDef): Axis[] {
   if (def.kind === "top") return [2];
   if (def.kind === "corner") return [0, 1];
   return def.dir[0] !== 0 ? [0] : [1];
@@ -281,7 +290,7 @@ export function ResizeHandles() {
     const factors = [sx, sy, sz];
     setLabel({
       key: d.def.key,
-      dims: dimsFor(d.def).map((axis) => ({
+      dims: dragDimsFor(d.def).map((axis) => ({
         axis,
         mm: size.getComponent(axis) * factors[axis],
       })),
