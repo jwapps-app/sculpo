@@ -338,11 +338,25 @@ export function Toolbar() {
           e.target.value = "";
           if (!file) return;
           try {
-            const { params, name, triangles, simplifiedFrom } = await importMeshFile(file);
+            const { params, name, triangles, simplifiedFrom, deviationMm } =
+              await importMeshFile(file, (tris) =>
+                confirm(
+                  `This mesh has ${tris.toLocaleString()} triangles.\n\n` +
+                    `OK — simplify to ~250,000 for smooth editing (the exact surface ` +
+                    `deviation is measured and reported).\n` +
+                    `Cancel — keep the full resolution (booleans and saves will be slower).`,
+                ),
+              );
             addImportedMesh(params, name);
             if (simplifiedFrom) {
+              const dev =
+                deviationMm !== undefined && deviationMm < 0.005
+                  ? "under 0.005"
+                  : (deviationMm ?? 0).toFixed(3);
               alert(
-                `Imported. Simplified from ${simplifiedFrom.toLocaleString()} to ${triangles.toLocaleString()} triangles so editing stays smooth.`,
+                `Imported. Simplified from ${simplifiedFrom.toLocaleString()} to ` +
+                  `${triangles.toLocaleString()} triangles — measured surface deviation ` +
+                  `${dev} mm.`,
               );
             }
           } catch (err) {

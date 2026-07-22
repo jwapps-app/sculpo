@@ -23,8 +23,8 @@ class Settings(BaseSettings):
     session_ttl_days: int = 90
 
     # Hard cap on a stored project's serialized size (imported meshes ride
-    # inside the JSON).
-    max_project_bytes: int = 15_000_000
+    # inside the JSON; full-resolution imports can be tens of MB).
+    max_project_bytes: int = 50_000_000
     max_projects_per_user: int = 200
 
     @property

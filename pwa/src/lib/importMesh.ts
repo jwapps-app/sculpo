@@ -11,18 +11,23 @@ export interface ImportedMesh {
   params: Record<string, string>;
   name: string;
   triangles: number;
-  // Set when the mesh was decimated on import: the original triangle count.
+  // Set when the mesh was decimated on import: the original triangle count
+  // and the simplifier's measured worst-case surface deviation in mm.
   simplifiedFrom?: number;
+  deviationMm?: number;
 }
 
-// Above SOFT_LIMIT triangles, imports are decimated toward TARGET so booleans
-// stay interactive and projects stay saveable. HARD_LIMIT guards the browser
-// itself from running out of memory while parsing.
+// Above SOFT_LIMIT triangles the importer offers decimation toward TARGET
+// (mandatory above KEEP_LIMIT — booleans and saving stop being practical).
+// HARD_LIMIT guards the browser itself from running out of memory.
 const SOFT_LIMIT = 300_000;
 const TARGET_TRIANGLES = 250_000;
+export const KEEP_LIMIT = 1_500_000;
 const HARD_LIMIT = 5_000_000;
 
-async function decimate(geo: THREE.BufferGeometry): Promise<THREE.BufferGeometry> {
+async function decimate(
+  geo: THREE.BufferGeometry,
+): Promise<{ geo: THREE.BufferGeometry; deviationMm: number }> {
   await MeshoptSimplifier.ready;
   const positions = geo.getAttribute("position").array as Float32Array;
   let indices: Uint32Array;
@@ -32,14 +37,21 @@ async function decimate(geo: THREE.BufferGeometry): Promise<THREE.BufferGeometry
     indices = new Uint32Array(positions.length / 3);
     for (let i = 0; i < indices.length; i++) indices[i] = i;
   }
-  const [simplified] = MeshoptSimplifier.simplify(
+  const [simplified, relativeError] = MeshoptSimplifier.simplify(
     indices,
     positions,
     3,
     TARGET_TRIANGLES * 3,
-    0.01, // allow up to ~1% shape deviation to hit the budget
+    0.01, // error ceiling; the measured result is usually far below it
     [],
   );
+  // The simplifier's error is relative to the mesh extent; convert to mm.
+  geo.computeBoundingBox();
+  const size = geo.boundingBox
+    ? geo.boundingBox.getSize(new THREE.Vector3())
+    : new THREE.Vector3(1, 1, 1);
+  const extent = Math.max(size.x, size.y, size.z);
+  const deviationMm = relativeError * extent;
   // Rebuild compactly: expand to a triangle soup of only the surviving
   // triangles, then weld — drops the vertices simplification orphaned.
   const soup = new Float32Array(simplified.length * 3);
@@ -51,7 +63,7 @@ async function decimate(geo: THREE.BufferGeometry): Promise<THREE.BufferGeometry
   }
   const out = new THREE.BufferGeometry();
   out.setAttribute("position", new THREE.BufferAttribute(soup, 3));
-  return mergeVertices(out, 1e-4);
+  return { geo: mergeVertices(out, 1e-4), deviationMm };
 }
 
 function stripToPosition(geo: THREE.BufferGeometry): THREE.BufferGeometry {
@@ -64,7 +76,13 @@ function stripToPosition(geo: THREE.BufferGeometry): THREE.BufferGeometry {
 const triCount = (geo: THREE.BufferGeometry) =>
   Math.round((geo.index ? geo.index.count : geo.getAttribute("position").count) / 3);
 
-async function finalize(geoIn: THREE.BufferGeometry, name: string): Promise<ImportedMesh> {
+// decideSimplify: asked when the mesh is heavy but keepable — return false to
+// keep the original resolution. Above KEEP_LIMIT decimation is mandatory.
+async function finalize(
+  geoIn: THREE.BufferGeometry,
+  name: string,
+  decideSimplify?: (triangles: number) => boolean,
+): Promise<ImportedMesh> {
   // Weld duplicate vertices so booleans see a connected surface, then center
   // on the origin (the node transform handles placement).
   let geo = mergeVertices(stripToPosition(geoIn), 1e-4);
@@ -78,22 +96,34 @@ async function finalize(geoIn: THREE.BufferGeometry, name: string): Promise<Impo
   if (triangles < 1) throw new Error("No triangles found in the imported file.");
 
   let simplifiedFrom: number | undefined;
+  let deviationMm: number | undefined;
   if (triangles > SOFT_LIMIT) {
-    simplifiedFrom = triangles;
-    geo = await decimate(geo);
-    geo.center();
-    triangles = triCount(geo);
-    if (triangles < 1) throw new Error("Simplification failed — the mesh may be degenerate.");
+    const mustSimplify = triangles > KEEP_LIMIT;
+    const wantSimplify = mustSimplify || !decideSimplify || decideSimplify(triangles);
+    if (wantSimplify) {
+      simplifiedFrom = triangles;
+      const result = await decimate(geo);
+      geo = result.geo;
+      deviationMm = result.deviationMm;
+      geo.center();
+      triangles = triCount(geo);
+      if (triangles < 1) {
+        throw new Error("Simplification failed — the mesh may be degenerate.");
+      }
+    }
   }
-  return { params: encodeMeshParams(geo), name, triangles, simplifiedFrom };
+  return { params: encodeMeshParams(geo), name, triangles, simplifiedFrom, deviationMm };
 }
 
-export async function importMeshFile(file: File): Promise<ImportedMesh> {
+export async function importMeshFile(
+  file: File,
+  decideSimplify?: (triangles: number) => boolean,
+): Promise<ImportedMesh> {
   const ext = file.name.split(".").pop()?.toLowerCase();
   const baseName = file.name.replace(/\.[^.]+$/, "");
   if (ext === "stl") {
     const geo = new STLLoader().parse(await file.arrayBuffer());
-    return finalize(geo, baseName);
+    return finalize(geo, baseName, decideSimplify);
   }
   if (ext === "obj") {
     const root = new OBJLoader().parse(await file.text());
@@ -105,7 +135,7 @@ export async function importMeshFile(file: File): Promise<ImportedMesh> {
     if (parts.length === 0) throw new Error("No meshes found in the OBJ file.");
     const merged = mergeGeometries(parts.map((p) => p.toNonIndexed()));
     if (!merged) throw new Error("Could not merge the OBJ meshes.");
-    return finalize(merged, baseName);
+    return finalize(merged, baseName, decideSimplify);
   }
   if (ext === "svg") {
     const { paths } = new SVGLoader().parse(await file.text());
@@ -119,7 +149,7 @@ export async function importMeshFile(file: File): Promise<ImportedMesh> {
     // SVG is Y-down; mirror it upright and restore winding.
     geo.applyMatrix4(new THREE.Matrix4().makeScale(1, -1, 1));
     flipWinding(geo);
-    return finalize(geo, baseName);
+    return finalize(geo, baseName, decideSimplify);
   }
   throw new Error("Unsupported file type — import .stl, .obj, or .svg.");
 }
