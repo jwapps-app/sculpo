@@ -165,6 +165,12 @@ interface SceneState {
   selectAll: () => void;
   toggleTransparentSelected: () => void;
   setNodeColor: (id: string, color: string | undefined) => void;
+  // Rotate the selection by an angle (radians) about a world axis, pivoting on
+  // the selection's combined center — the same result as the gizmo. Editing
+  // absolute Euler angles couples the axes confusingly, so the inspector nudges
+  // instead.
+  rotateSelectedBy: (axis: 0 | 1 | 2, radians: number) => void;
+  resetRotationSelected: () => void;
   groupSelected: () => void;
   ungroupSelected: () => void;
   setProjectName: (name: string) => void;
@@ -715,6 +721,56 @@ export const useScene = create<SceneState>()(
           if (color === undefined) delete next.color;
           else next.color = color;
           return { project: { ...s.project, nodes: { ...s.project.nodes, [id]: next } } };
+        });
+      },
+
+      rotateSelectedBy: (axis, radians) => {
+        const { selection, project } = get();
+        const ids = selection.filter(
+          (id) => project.nodes[id] && !project.nodes[id].locked,
+        );
+        if (ids.length === 0 || !Number.isFinite(radians) || radians === 0) return;
+        // Pivot on the combined bounds center, like the gizmo.
+        const box = new THREE.Box3();
+        let any = false;
+        for (const id of ids) {
+          const b = sceneApi.getNodeBounds(id);
+          if (b) {
+            box.union(b);
+            any = true;
+          }
+        }
+        const center = any ? box.getCenter(new THREE.Vector3()) : new THREE.Vector3();
+        const axisVec = new THREE.Vector3(axis === 0 ? 1 : 0, axis === 1 ? 1 : 0, axis === 2 ? 1 : 0);
+        const q = new THREE.Quaternion().setFromAxisAngle(axisVec, radians);
+        const delta = new THREE.Matrix4()
+          .makeTranslation(center.x, center.y, center.z)
+          .multiply(new THREE.Matrix4().makeRotationFromQuaternion(q))
+          .multiply(new THREE.Matrix4().makeTranslation(-center.x, -center.y, -center.z));
+        set((s) => {
+          const nodes = { ...s.project.nodes };
+          for (const id of ids) {
+            const n = nodes[id];
+            const world = delta
+              .clone()
+              .multiply(composeMatrix(n.position, n.rotation, n.scale));
+            const t = decomposeMatrix(world);
+            nodes[id] = { ...n, position: t.position, rotation: t.rotation, scale: t.scale };
+          }
+          return { project: { ...s.project, nodes } };
+        });
+      },
+
+      resetRotationSelected: () => {
+        const { selection, project } = get();
+        const ids = selection.filter(
+          (id) => project.nodes[id] && !project.nodes[id].locked,
+        );
+        if (ids.length === 0) return;
+        set((s) => {
+          const nodes = { ...s.project.nodes };
+          for (const id of ids) nodes[id] = { ...nodes[id], rotation: [0, 0, 0] };
+          return { project: { ...s.project, nodes } };
         });
       },
 

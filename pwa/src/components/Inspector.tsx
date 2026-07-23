@@ -169,6 +169,72 @@ function ShapeParams({ node }: { node: ShapeNode }) {
 
 const AXES = ["X", "Y", "Z"] as const;
 
+// Relative rotation control: type or step degrees per world axis to rotate the
+// selection by that much (about its center, like the gizmo), and Reset returns
+// it to upright. Absolute Euler fields couple the axes confusingly, so we
+// don't edit them directly.
+function RotateControl() {
+  const rotateSelectedBy = useScene((s) => s.rotateSelectedBy);
+  const resetRotationSelected = useScene((s) => s.resetRotationSelected);
+  const nudge = (axis: 0 | 1 | 2, deg: number) => {
+    if (deg) rotateSelectedBy(axis, THREE.MathUtils.degToRad(deg));
+  };
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+          Rotate (°)
+        </span>
+        <button
+          onClick={resetRotationSelected}
+          title="Return to upright (no rotation)"
+          className="rounded border border-neutral-300 px-1.5 py-0.5 text-xs hover:bg-neutral-100"
+        >
+          Reset
+        </button>
+      </div>
+      {AXES.map((axis, i) => (
+        <div key={axis} className="flex items-center gap-2 text-sm">
+          <span className="w-4 font-bold" style={{ color: AXIS_COLORS[i] }}>
+            {axis}
+          </span>
+          <div className="flex overflow-hidden rounded border border-neutral-300">
+            <button
+              onClick={() => nudge(i as 0 | 1 | 2, -15)}
+              title="Rotate -15°"
+              className="px-1.5 hover:bg-neutral-100"
+            >
+              −
+            </button>
+            <input
+              type="number"
+              step={15}
+              defaultValue={0}
+              key={`${axis}-nudge`}
+              title="Type degrees, press Enter to rotate by that much"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  nudge(i as 0 | 1 | 2, Number(e.currentTarget.value) || 0);
+                  e.currentTarget.value = "0";
+                  e.currentTarget.blur();
+                }
+              }}
+              className="w-14 border-x border-neutral-300 px-1.5 py-0.5 text-right"
+            />
+            <button
+              onClick={() => nudge(i as 0 | 1 | 2, 15)}
+              title="Rotate +15°"
+              className="px-1.5 hover:bg-neutral-100"
+            >
+              +
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function LockHideRow() {
   const toggleLockSelected = useScene((s) => s.toggleLockSelected);
   const hideSelected = useScene((s) => s.hideSelected);
@@ -318,14 +384,7 @@ export function Inspector() {
           fromDisplay={(v) => mmFromDisplay(v, units)}
           onCommit={(v) => setTransform(group.id, v, group.rotation, group.scale)}
         />
-        <VecFields
-          title="Rotation (°)"
-          value={group.rotation}
-          step={15}
-          toDisplay={(v) => THREE.MathUtils.radToDeg(v)}
-          fromDisplay={(v) => THREE.MathUtils.degToRad(v)}
-          onCommit={(v) => setTransform(group.id, group.position, v, group.scale)}
-        />
+        <RotateControl />
         <VecFields
           title="Scale"
           value={group.scale}
@@ -382,14 +441,7 @@ export function Inspector() {
         fromDisplay={(v) => mmFromDisplay(v, units)}
         onCommit={(v) => updateShape(node.id, { position: v })}
       />
-      <VecFields
-        title="Rotation (°)"
-        value={node.rotation}
-        step={15}
-        toDisplay={(v) => THREE.MathUtils.radToDeg(v)}
-        fromDisplay={(v) => THREE.MathUtils.degToRad(v)}
-        onCommit={(v) => updateShape(node.id, { rotation: v })}
-      />
+      <RotateControl />
       <VecFields
         title="Scale"
         value={node.scale}
