@@ -94,9 +94,27 @@ export function SceneRig() {
       controls.update();
     };
 
-    sceneApi.homeView = () => {
-      sceneApi.setView("iso");
-      sceneApi.zoomToFit();
+    // Z-up orbit: spherical about the controls target, poles clamped so the
+    // camera can't flip over the top.
+    sceneApi.orbitBy = (dx, dy) => {
+      if (!controls) return;
+      const offset = camera.position.clone().sub(controls.target);
+      const r = offset.length();
+      if (r < 1e-6) return;
+      let azimuth = Math.atan2(offset.y, offset.x);
+      let polar = Math.acos(THREE.MathUtils.clamp(offset.z / r, -1, 1));
+      const speed = 0.01;
+      azimuth -= dx * speed;
+      polar = THREE.MathUtils.clamp(polar + dy * speed, 0.05, Math.PI - 0.05);
+      const sp = Math.sin(polar);
+      camera.position.set(
+        controls.target.x + r * sp * Math.cos(azimuth),
+        controls.target.y + r * sp * Math.sin(azimuth),
+        controls.target.z + r * Math.cos(polar),
+      );
+      camera.up.set(0, 0, 1);
+      camera.lookAt(controls.target);
+      controls.update();
     };
 
     sceneApi.dropShape = (kind, clientX, clientY) => {
@@ -365,7 +383,7 @@ export function SceneRig() {
     return () => {
       sceneApi.setView = () => {};
       sceneApi.zoomToFit = () => {};
-      sceneApi.homeView = () => {};
+      sceneApi.orbitBy = () => {};
       sceneApi.dropShape = () => {};
       sceneApi.getNodeBounds = () => null;
       sceneApi.hitTestNodes = () => false;

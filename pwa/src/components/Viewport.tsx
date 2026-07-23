@@ -1,13 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
-import {
-  GizmoHelper,
-  GizmoViewcube,
-  Grid,
-  OrbitControls,
-  OrthographicCamera,
-  PerspectiveCamera,
-} from "@react-three/drei";
+import { Grid, OrbitControls, OrthographicCamera, PerspectiveCamera } from "@react-three/drei";
 import * as THREE from "three";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import { useScene } from "../state/store";
@@ -21,6 +14,7 @@ import { ResizeHandles } from "./ResizeHandles";
 import { AlignDots } from "./AlignDots";
 import { MeasureOverlay } from "./MeasureOverlay";
 import { RulerOverlay } from "./RulerOverlay";
+import { ViewCube } from "./ViewCube";
 import { PlacementPreview } from "./PlacementPreview";
 import { measureState } from "../lib/measure";
 import { SceneRig } from "./SceneRig";
@@ -59,13 +53,6 @@ function ViewButtons() {
         className="w-14 rounded border border-neutral-300 bg-white/90 px-1.5 py-0.5 text-xs font-medium text-neutral-700 hover:bg-white"
       >
         Fit
-      </button>
-      <button
-        onClick={() => sceneApi.homeView()}
-        title="Home view — default angle, framed on everything"
-        className="w-14 rounded border border-neutral-300 bg-white/90 px-1.5 py-0.5 text-xs text-neutral-600 hover:bg-white"
-      >
-        Home
       </button>
       <button
         onClick={() => setOrtho(!ortho)}
@@ -475,17 +462,7 @@ export function Viewport() {
           return renderNode(node, editingGroup !== null);
         })}
 
-        {/* Orientation cube: click a face/edge/corner to snap the camera. */}
-        <GizmoHelper alignment="top-right" margin={[64, 64]}>
-          <GizmoViewcube
-            color="#f3f4f6"
-            textColor="#374151"
-            strokeColor="#9ca3af"
-            hoverColor="#2a6cd4"
-            faces={["Right", "Left", "Back", "Front", "Top", "Bottom"]}
-          />
-        </GizmoHelper>
-
+        <ViewCube />
         <Gizmo />
         <ResizeHandles />
         <AlignDots />
