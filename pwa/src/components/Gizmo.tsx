@@ -142,9 +142,12 @@ export function Gizmo() {
   const onObjectChange = () => {
     const d = drag.current;
     if (!d) return;
-    // Ignore the press until the pointer has actually traveled: hold every
-    // object at its start transform so a click can't nudge a shape.
-    if (!d.crossed) {
+    // The fling guard is only for translate: a view-aligned drag plane turns a
+    // few pixels of click-jitter into a big slide. Rotate/scale don't have
+    // that (a pure click on a ring or handle changes nothing), and the guard's
+    // hold-then-rebaseline fought the rotation snap — showing 15° while the
+    // shape stayed put. So gate it on translate only.
+    if (mode === "translate" && !d.crossed) {
       const dist = Math.hypot(
         lastPointer.x - d.downClient.x,
         lastPointer.y - d.downClient.y,
@@ -155,10 +158,9 @@ export function Gizmo() {
         obj.scale.copy(startLocal.scale);
       }
       if (dist < DRAG_THRESHOLD) return;
-      // Crossing: re-baseline so the transform is measured only from HERE,
-      // not from the press. This is what kills the "fling" — the pixels of
-      // click-jitter that got us here are discarded rather than applied all
-      // at once (which, on a view-aligned plane, launches the shape).
+      // Crossing: re-baseline so the slide is measured only from HERE, not
+      // from the press — the pixels of jitter that got us here are discarded
+      // rather than applied all at once.
       d.crossed = true;
       pivot.updateMatrixWorld(true);
       d.pivotStart = pivot.matrixWorld.clone();
@@ -205,9 +207,25 @@ export function Gizmo() {
     const d = drag.current;
     drag.current = null;
     setDragInfo(null);
-    // A press that never crossed the threshold is a click, not a transform —
-    // objects are already back at their start, so commit nothing.
-    if (!d || !d.crossed) return;
+    if (!d) return;
+    // Commit only if something actually changed. For translate that means the
+    // drag crossed the threshold (below it, objects were held at start); for
+    // rotate/scale, that a pure click (which moves nothing) leaves them at
+    // start. Either way, an unchanged press adds no undo step.
+    const changed = d.objects.some(
+      ({ obj, startLocal }) =>
+        !obj.position.equals(startLocal.pos) ||
+        !obj.quaternion.equals(startLocal.quat) ||
+        !obj.scale.equals(startLocal.scale),
+    );
+    if (!changed) {
+      for (const { obj, startLocal } of d.objects) {
+        obj.position.copy(startLocal.pos);
+        obj.quaternion.copy(startLocal.quat);
+        obj.scale.copy(startLocal.scale);
+      }
+      return;
+    }
     setTransforms(
       d.objects.map(({ id, obj }) => ({
         id,
