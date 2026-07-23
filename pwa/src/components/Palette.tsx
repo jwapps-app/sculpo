@@ -25,6 +25,8 @@ const KINDS: { kind: PrimitiveKind; label: string }[] = [
   { kind: "tube", label: "Tube" },
   { kind: "star", label: "Star" },
   { kind: "text", label: "Text" },
+  { kind: "gear", label: "Gear" },
+  { kind: "thread", label: "Thread" },
 ];
 
 export function Palette() {

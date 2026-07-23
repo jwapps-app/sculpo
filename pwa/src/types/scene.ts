@@ -17,6 +17,8 @@ export type PrimitiveKind =
   | "tube"
   | "star"
   | "octagon"
+  | "thread" // parametric screw thread
+  | "gear" // involute spur gear
   | "sketch" // 2D profile extruded; profile stored in params
   | "revolve" // 2D profile lathed around the Z axis
   | "scribble" // freehand strokes, traced and extruded

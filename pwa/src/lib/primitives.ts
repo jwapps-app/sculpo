@@ -5,6 +5,7 @@ import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.j
 import type { PrimitiveKind, ShapeNode } from "../types/scene";
 import { newId } from "./id";
 import { decodeMeshGeometry } from "./meshData";
+import { gearGeometry, threadGeometry } from "./generators";
 import {
   extrudeSketchGeometry,
   parsePaths,
@@ -56,6 +57,8 @@ export const DEFAULT_PARAMS: Record<
   tube: { r: 10, wall: 3, h: 20, segments: 48 },
   star: { points: 5, r1: 10, r2: 4, h: 5 },
   octagon: { r: 10, h: 20 },
+  thread: { diameter: 10, pitch: 1.5, length: 20, segments: 64, internal: 0 },
+  gear: { teeth: 16, module: 2, thickness: 6, bore: 5 },
   sketch: { profile: "[]", h: 10 },
   revolve: { profile: "[]", segments: 48 },
   scribble: { paths: "[]", brush: 4, h: 5 },
@@ -77,6 +80,8 @@ export const PALETTE_COLORS: Record<PrimitiveKind, string> = {
   tube: "#8f5dd6",
   star: "#d6b25d",
   octagon: "#5da8d6",
+  thread: "#8a94a6",
+  gear: "#5d9ad6",
   sketch: "#5d7fd6",
   revolve: "#c97a5d",
   scribble: "#7a5dd6",
@@ -284,6 +289,25 @@ export function buildGeometry(node: ShapeNode): THREE.BufferGeometry | null {
       // Flat edge forward, like a stop sign.
       geo.rotateY(Math.PI / 8);
       geo.rotateX(Math.PI / 2);
+      break;
+    }
+    case "thread": {
+      geo = threadGeometry({
+        diameter: num(p, "diameter", 10),
+        pitch: Math.max(0.2, num(p, "pitch", 1.5)),
+        length: num(p, "length", 20),
+        segments: num(p, "segments", 64),
+        internal: num(p, "internal", 0) > 0.5,
+      });
+      break;
+    }
+    case "gear": {
+      geo = gearGeometry({
+        teeth: num(p, "teeth", 16),
+        module: Math.max(0.2, num(p, "module", 2)),
+        thickness: num(p, "thickness", 6),
+        bore: num(p, "bore", 5),
+      });
       break;
     }
     case "sketch": {
