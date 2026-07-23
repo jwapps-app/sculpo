@@ -33,6 +33,7 @@ export interface ShapeNode {
   color: string; // hex, display only
   locked?: boolean;
   hidden?: boolean;
+  transparent?: boolean; // see-through for checking internal fits
 }
 
 export interface GroupNode {
@@ -46,6 +47,7 @@ export interface GroupNode {
   scale: Vec3;
   locked?: boolean;
   hidden?: boolean;
+  transparent?: boolean;
 }
 
 export type SceneNode = ShapeNode | GroupNode;

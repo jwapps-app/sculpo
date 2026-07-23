@@ -94,6 +94,11 @@ export function SceneRig() {
       controls.update();
     };
 
+    sceneApi.homeView = () => {
+      sceneApi.setView("iso");
+      sceneApi.zoomToFit();
+    };
+
     sceneApi.dropShape = (kind, clientX, clientY) => {
       const s = useScene.getState();
       const raycaster = new THREE.Raycaster();
@@ -360,6 +365,7 @@ export function SceneRig() {
     return () => {
       sceneApi.setView = () => {};
       sceneApi.zoomToFit = () => {};
+      sceneApi.homeView = () => {};
       sceneApi.dropShape = () => {};
       sceneApi.getNodeBounds = () => null;
       sceneApi.hitTestNodes = () => false;

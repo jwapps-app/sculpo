@@ -92,8 +92,8 @@ export function ShapeMesh({ node, dimmed = false }: { node: ShapeNode; dimmed?: 
     >
       <meshStandardMaterial
         color={isHole ? "#9aa0a6" : node.color}
-        transparent={isHole || dimmed}
-        opacity={dimmed ? 0.15 : isHole ? 0.4 : 1}
+        transparent={isHole || dimmed || !!node.transparent}
+        opacity={dimmed ? 0.15 : isHole ? 0.4 : node.transparent ? 0.45 : 1}
         emissive={selected && !dimmed ? "#2a6cd4" : "#000000"}
         emissiveIntensity={selected && !dimmed ? 0.35 : 0}
         roughness={0.65}

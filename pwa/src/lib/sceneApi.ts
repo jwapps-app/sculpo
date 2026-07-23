@@ -8,6 +8,8 @@ export type ViewName = "top" | "front" | "right" | "iso";
 export const sceneApi = {
   setView: (_view: ViewName) => {},
   zoomToFit: () => {},
+  // Default viewpoint: iso angle, framed on the whole scene.
+  homeView: () => {},
   dropShape: (_kind: PrimitiveKind, _clientX: number, _clientY: number) => {},
   // World-space AABB of a top-level node's rendered mesh.
   getNodeBounds: (_id: string): THREE.Box3 | null => null,

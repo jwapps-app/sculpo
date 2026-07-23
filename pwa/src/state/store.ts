@@ -11,6 +11,8 @@ import { sceneApi } from "../lib/sceneApi";
 import { DEFAULT_STEP, type Units } from "../lib/units";
 
 export type TransformMode = "translate" | "rotate" | "scale";
+
+const CLIPBOARD_KEY = "clipboard";
 export type AlignMode = "min" | "center" | "max";
 export type Axis = 0 | 1 | 2;
 
@@ -147,6 +149,10 @@ interface SceneState {
   dropSelectedToWorkplane: () => void;
   deleteSelected: () => void;
   duplicateSelected: () => void;
+  copySelection: () => void;
+  pasteClipboard: () => void;
+  selectAll: () => void;
+  toggleTransparentSelected: () => void;
   groupSelected: () => void;
   ungroupSelected: () => void;
   setProjectName: (name: string) => void;
@@ -566,6 +572,92 @@ export const useScene = create<SceneState>()(
             selection: newTopIds,
             smartDup: { transforms: nextTransforms },
           };
+        });
+      },
+
+      // Clipboard lives in localStorage so shapes can be pasted into a
+      // different design (or another tab), like Tinkercad's copy/paste.
+      copySelection: () => {
+        const { selection, project, editingGroupId } = get();
+        const editing = editingGroupId ? project.nodes[editingGroupId] : null;
+        const scope =
+          editing && isGroup(editing) ? editing.childIds : project.rootOrder;
+        const rootIds = scope.filter((id) => selection.includes(id));
+        if (rootIds.length === 0) return;
+        const nodes: Record<string, SceneNode> = {};
+        const keep = new Set<string>();
+        for (const id of rootIds) collectSubtree(id, project.nodes, keep);
+        for (const id of keep) nodes[id] = project.nodes[id];
+        try {
+          localStorage.setItem(CLIPBOARD_KEY, JSON.stringify({ rootIds, nodes }));
+        } catch {
+          // clipboard is best-effort (quota)
+        }
+      },
+
+      pasteClipboard: () => {
+        let payload: { rootIds: string[]; nodes: Record<string, SceneNode> } | null = null;
+        try {
+          const raw = localStorage.getItem(CLIPBOARD_KEY);
+          payload = raw ? JSON.parse(raw) : null;
+        } catch {
+          payload = null;
+        }
+        if (!payload?.rootIds?.length || !payload.nodes) return;
+        const added: Record<string, SceneNode> = {};
+        const newTopIds: string[] = [];
+        for (const id of payload.rootIds) {
+          const newIdStr = cloneSubtree(id, payload.nodes, added);
+          if (!newIdStr) continue;
+          const clone = added[newIdStr];
+          // Offset so a paste on top of its source is visible.
+          clone.position = [clone.position[0] + 10, clone.position[1] + 10, clone.position[2]];
+          newTopIds.push(newIdStr);
+        }
+        if (newTopIds.length === 0) return;
+        set((s) => {
+          const editing = s.editingGroupId ? s.project.nodes[s.editingGroupId] : null;
+          if (editing && isGroup(editing)) {
+            return {
+              project: {
+                ...s.project,
+                nodes: {
+                  ...s.project.nodes,
+                  ...added,
+                  [editing.id]: { ...editing, childIds: [...editing.childIds, ...newTopIds] },
+                },
+              },
+              selection: newTopIds,
+            };
+          }
+          return {
+            project: {
+              ...s.project,
+              nodes: { ...s.project.nodes, ...added },
+              rootOrder: [...s.project.rootOrder, ...newTopIds],
+            },
+            selection: newTopIds,
+          };
+        });
+      },
+
+      selectAll: () => {
+        const { project, editingGroupId } = get();
+        const editing = editingGroupId ? project.nodes[editingGroupId] : null;
+        const scope =
+          editing && isGroup(editing) ? editing.childIds : project.rootOrder;
+        set({ selection: scope.filter((id) => !project.nodes[id]?.hidden) });
+      },
+
+      toggleTransparentSelected: () => {
+        const { selection, project } = get();
+        const ids = selection.filter((id) => project.nodes[id]);
+        if (ids.length === 0) return;
+        const on = ids.some((id) => !project.nodes[id].transparent);
+        set((s) => {
+          const nodes = { ...s.project.nodes };
+          for (const id of ids) nodes[id] = { ...nodes[id], transparent: on };
+          return { project: { ...s.project, nodes } };
         });
       },
 

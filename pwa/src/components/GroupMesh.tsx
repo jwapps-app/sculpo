@@ -49,8 +49,8 @@ export function GroupMesh({ node, dimmed = false }: { node: GroupNode; dimmed?: 
     >
       <meshStandardMaterial
         color={color}
-        transparent={dimmed}
-        opacity={dimmed ? 0.15 : 1}
+        transparent={dimmed || !!node.transparent}
+        opacity={dimmed ? 0.15 : node.transparent ? 0.45 : 1}
         emissive={selected && !dimmed ? "#2a6cd4" : "#000000"}
         emissiveIntensity={selected && !dimmed ? 0.35 : 0}
         roughness={0.65}

@@ -42,6 +42,21 @@ export function useShortcuts() {
         s.duplicateSelected();
         return;
       }
+      if (mod && e.key.toLowerCase() === "c") {
+        e.preventDefault();
+        s.copySelection();
+        return;
+      }
+      if (mod && e.key.toLowerCase() === "v") {
+        e.preventDefault();
+        s.pasteClipboard();
+        return;
+      }
+      if (mod && e.key.toLowerCase() === "a") {
+        e.preventDefault();
+        s.selectAll();
+        return;
+      }
       if (mod && e.key.toLowerCase() === "g") {
         e.preventDefault();
         if (e.shiftKey) s.ungroupSelected();

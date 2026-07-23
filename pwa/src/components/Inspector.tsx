@@ -148,10 +148,24 @@ const AXES = ["X", "Y", "Z"] as const;
 function LockHideRow() {
   const toggleLockSelected = useScene((s) => s.toggleLockSelected);
   const hideSelected = useScene((s) => s.hideSelected);
+  const toggleTransparentSelected = useScene((s) => s.toggleTransparentSelected);
   const selection = useScene((s) => s.selection);
   const nodes = useScene((s) => s.project.nodes);
   const anyLocked = selection.some((id) => nodes[id]?.locked);
+  const anyTransparent = selection.some((id) => nodes[id]?.transparent);
   return (
+    <>
+    <button
+      onClick={toggleTransparentSelected}
+      title="See-through, for checking internal fits (display only)"
+      className={`rounded border px-2 py-1 text-xs ${
+        anyTransparent
+          ? "border-neutral-700 bg-neutral-800 text-white"
+          : "border-neutral-300 hover:bg-neutral-100"
+      }`}
+    >
+      {anyTransparent ? "Transparent: on" : "Transparent"}
+    </button>
     <div className="flex gap-1">
       <button
         onClick={toggleLockSelected}
@@ -170,6 +184,7 @@ function LockHideRow() {
         Hide
       </button>
     </div>
+    </>
   );
 }
 

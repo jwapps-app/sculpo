@@ -6,6 +6,7 @@ import type { TransformControls as TransformControlsImpl } from "three-stdlib";
 import { useScene } from "../state/store";
 import { gizmoState } from "../lib/gizmoState";
 import { sceneApi } from "../lib/sceneApi";
+import { formatLength } from "../lib/units";
 import type { Vec3 } from "../types/scene";
 
 interface DragState {
@@ -110,10 +111,16 @@ export function Gizmo() {
       }
       m.decompose(obj.position, obj.quaternion, obj.scale);
     }
-    const fmt = (v: THREE.Vector3, digits = 1) =>
-      `X ${v.x.toFixed(digits)}  Y ${v.y.toFixed(digits)}  Z ${v.z.toFixed(digits)}`;
-    if (mode === "translate") setDragInfo(fmt(pivot.position));
-    else if (mode === "scale") setDragInfo(fmt(pivot.scale, 2));
+    const units = useScene.getState().units;
+    if (mode === "translate") {
+      const p = pivot.position;
+      setDragInfo(
+        `X ${formatLength(p.x, units)}  Y ${formatLength(p.y, units)}  Z ${formatLength(p.z, units)} ${units}`,
+      );
+    } else if (mode === "scale") {
+      const v = pivot.scale;
+      setDragInfo(`X ${v.x.toFixed(2)}×  Y ${v.y.toFixed(2)}×  Z ${v.z.toFixed(2)}×`);
+    }
     else {
       const e = pivot.rotation;
       setDragInfo(

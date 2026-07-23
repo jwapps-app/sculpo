@@ -53,6 +53,13 @@ function ViewButtons() {
         Fit
       </button>
       <button
+        onClick={() => sceneApi.homeView()}
+        title="Home view — default angle, framed on everything"
+        className="w-14 rounded border border-neutral-300 bg-white/90 px-1.5 py-0.5 text-xs text-neutral-600 hover:bg-white"
+      >
+        Home
+      </button>
+      <button
         onClick={() => setOrtho(!ortho)}
         title="Toggle orthographic projection"
         className={`w-14 rounded border px-1.5 py-0.5 text-xs ${
