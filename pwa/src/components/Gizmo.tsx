@@ -11,7 +11,41 @@ import type { Vec3 } from "../types/scene";
 
 interface DragState {
   pivotStart: THREE.Matrix4;
-  objects: { id: string; obj: THREE.Object3D; start: THREE.Matrix4 }[];
+  objects: {
+    id: string;
+    obj: THREE.Object3D;
+    start: THREE.Matrix4;
+    // Local transform at press, for reverting sub-threshold jitter.
+    startLocal: { pos: THREE.Vector3; quat: THREE.Quaternion; scale: THREE.Vector3 };
+  }[];
+  downClient: { x: number; y: number };
+  crossed: boolean;
+}
+
+// A press only becomes a transform once the pointer travels past this many
+// pixels — the pixel or two a hand drifts during a click must move nothing,
+// and grazing an axis pointing toward the camera must not fling the shape.
+const DRAG_THRESHOLD = 4;
+
+// Latest pointer position, so onMouseDown knows where the press landed.
+const lastPointer = { x: 0, y: 0 };
+if (typeof window !== "undefined") {
+  window.addEventListener(
+    "pointermove",
+    (e) => {
+      lastPointer.x = e.clientX;
+      lastPointer.y = e.clientY;
+    },
+    { passive: true },
+  );
+  window.addEventListener(
+    "pointerdown",
+    (e) => {
+      lastPointer.x = e.clientX;
+      lastPointer.y = e.clientY;
+    },
+    { passive: true, capture: true },
+  );
 }
 
 // One gizmo drives the whole selection: it attaches to an invisible pivot at
@@ -79,7 +113,16 @@ export function Gizmo() {
       if (found) {
         const obj = found as THREE.Object3D;
         obj.updateMatrixWorld(true);
-        out.push({ id, obj, start: obj.matrixWorld.clone() });
+        out.push({
+          id,
+          obj,
+          start: obj.matrixWorld.clone(),
+          startLocal: {
+            pos: obj.position.clone(),
+            quat: obj.quaternion.clone(),
+            scale: obj.scale.clone(),
+          },
+        });
       }
     }
     return out;
@@ -90,12 +133,31 @@ export function Gizmo() {
     drag.current = {
       pivotStart: pivot.matrixWorld.clone(),
       objects: collectObjects(),
+      downClient: { x: lastPointer.x, y: lastPointer.y },
+      crossed: false,
     };
   };
 
   const onObjectChange = () => {
     const d = drag.current;
     if (!d) return;
+    // Ignore the press until the pointer has actually traveled: hold every
+    // object at its start transform so a click can't nudge or fling a shape.
+    if (!d.crossed) {
+      const dist = Math.hypot(
+        lastPointer.x - d.downClient.x,
+        lastPointer.y - d.downClient.y,
+      );
+      if (dist < DRAG_THRESHOLD) {
+        for (const { obj, startLocal } of d.objects) {
+          obj.position.copy(startLocal.pos);
+          obj.quaternion.copy(startLocal.quat);
+          obj.scale.copy(startLocal.scale);
+        }
+        return;
+      }
+      d.crossed = true;
+    }
     pivot.updateMatrixWorld(true);
     const delta = pivot.matrixWorld
       .clone()
@@ -133,7 +195,9 @@ export function Gizmo() {
     const d = drag.current;
     drag.current = null;
     setDragInfo(null);
-    if (!d) return;
+    // A press that never crossed the threshold is a click, not a transform —
+    // objects are already back at their start, so commit nothing.
+    if (!d || !d.crossed) return;
     setTransforms(
       d.objects.map(({ id, obj }) => ({
         id,
