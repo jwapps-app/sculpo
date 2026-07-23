@@ -18,3 +18,15 @@ export const gizmoState = {
     return !!c && (c.dragging || c.axis !== null);
   },
 };
+
+// handleActive is set on hover as well as on drag, and a handle that vanishes
+// while hovered (the selection cleared, say) never gets its pointer-out — which
+// used to strand the flag on, quietly disabling camera orbit and the marquee.
+// No gesture outlives the pointer being released, so clear it there.
+if (typeof window !== "undefined") {
+  const release = () => {
+    gizmoState.handleActive = false;
+  };
+  window.addEventListener("pointerup", release);
+  window.addEventListener("pointercancel", release);
+}

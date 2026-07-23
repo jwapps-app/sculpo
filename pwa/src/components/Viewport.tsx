@@ -260,6 +260,9 @@ export function Viewport() {
   // marquee yet. Capturing here would swallow the browser's click event (and
   // with it click-to-deselect), so capture only once dragging actually starts.
   const pendingMarquee = useRef<{ x: number; y: number } | null>(null);
+  // Touch marquee: press and hold on empty space, then drag.
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressStart = useRef<{ x: number; y: number } | null>(null);
   const cruiseDrag = useRef<string | null>(null);
   const wrapper = useRef<HTMLDivElement>(null);
   const cruiseMode = useScene((s) => s.cruiseMode);
@@ -321,8 +324,28 @@ export function Viewport() {
       }
     }
     if (sceneApi.hitTestNodes(e.clientX, e.clientY)) return;
-    // Marquee is a mouse gesture: on touch a one-finger drag orbits the view.
-    if (e.pointerType !== "mouse") return;
+    if (e.pointerType !== "mouse") {
+      // On touch a one-finger drag orbits, so the marquee needs a gesture that
+      // can't be confused with it: press and hold still, then drag. Any
+      // movement before the hold completes means the user meant to orbit.
+      const start = { x: e.clientX, y: e.clientY };
+      const pointerId = e.pointerId;
+      longPressStart.current = start;
+      if (longPressTimer.current) clearTimeout(longPressTimer.current);
+      longPressTimer.current = setTimeout(() => {
+        longPressTimer.current = null;
+        longPressStart.current = null;
+        // Take the gesture away from orbit for its remainder.
+        gizmoState.handleActive = true;
+        setMarquee({ x1: start.x, y1: start.y, x2: start.x, y2: start.y });
+        try {
+          wrapper.current?.setPointerCapture(pointerId);
+        } catch {
+          /* pointer already gone */
+        }
+      }, 400);
+      return;
+    }
     pendingMarquee.current = { x: e.clientX, y: e.clientY };
   };
 
@@ -342,6 +365,18 @@ export function Viewport() {
       sceneApi.cruiseMove(cruiseDrag.current, e.clientX, e.clientY);
       return;
     }
+    // Any real movement during the hold means it was an orbit, not a marquee.
+    const holdStart = longPressStart.current;
+    if (holdStart && longPressTimer.current) {
+      if (
+        Math.abs(e.clientX - holdStart.x) >= 8 ||
+        Math.abs(e.clientY - holdStart.y) >= 8
+      ) {
+        clearTimeout(longPressTimer.current);
+        longPressTimer.current = null;
+        longPressStart.current = null;
+      }
+    }
     const pending = pendingMarquee.current;
     if (pending && !marquee) {
       if (Math.abs(e.clientX - pending.x) >= 4 || Math.abs(e.clientY - pending.y) >= 4) {
@@ -359,6 +394,13 @@ export function Viewport() {
 
   const onPointerUp = (e: React.PointerEvent) => {
     pendingMarquee.current = null;
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+    longPressStart.current = null;
+    // A touch marquee borrowed the gesture from orbit; hand it back.
+    if (marquee && e.pointerType !== "mouse") gizmoState.handleActive = false;
     if (cruiseDrag.current) {
       const id = cruiseDrag.current;
       cruiseDrag.current = null;
