@@ -95,7 +95,12 @@ export const api = {
   async available(): Promise<boolean> {
     try {
       const res = await fetch(`${base()}/health`);
-      return res.ok;
+      if (!res.ok) return false;
+      // Insist on the real health payload. A packaged build serves its own
+      // shell for unknown paths, and misconfigured proxies return login pages,
+      // so a bare 200 is not proof that a Sculpo server is on the other end.
+      const body = (await res.json()) as { status?: string };
+      return body?.status === "ok";
     } catch {
       return false;
     }
