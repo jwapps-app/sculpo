@@ -20,6 +20,7 @@ import { Gizmo } from "./Gizmo";
 import { ResizeHandles } from "./ResizeHandles";
 import { AlignDots } from "./AlignDots";
 import { MeasureOverlay } from "./MeasureOverlay";
+import { RulerOverlay } from "./RulerOverlay";
 import { PlacementPreview } from "./PlacementPreview";
 import { measureState } from "../lib/measure";
 import { SceneRig } from "./SceneRig";
@@ -263,11 +264,17 @@ export function Viewport() {
   const cruiseMode = useScene((s) => s.cruiseMode);
   const placing = useScene((s) => s.placing);
   const measureMode = useScene((s) => s.measureMode);
+  const rulerPlacing = useScene((s) => s.rulerPlacing);
 
   const onPointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
     if (!(e.target instanceof HTMLCanvasElement)) return;
     const s = useScene.getState();
+    if (s.rulerPlacing) {
+      const snap = sceneApi.measureSnap(e.clientX, e.clientY);
+      if (snap) s.setRulerOrigin([snap.point[0], snap.point[1]]);
+      return;
+    }
     if (s.measureMode) {
       const snap = sceneApi.measureSnap(e.clientX, e.clientY);
       if (snap) {
@@ -483,6 +490,7 @@ export function Viewport() {
         <ResizeHandles />
         <AlignDots />
         <MeasureOverlay />
+        <RulerOverlay />
         <PlacementPreview />
         <OrbitControls
           makeDefault
@@ -510,6 +518,11 @@ export function Viewport() {
       {placing && (
         <div className="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 rounded bg-neutral-800/90 px-3 py-1 text-xs text-white">
           Click to place the shape — it snaps against nearby objects · Esc to cancel
+        </div>
+      )}
+      {rulerPlacing && (
+        <div className="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 rounded bg-neutral-800/90 px-3 py-1 text-xs text-white">
+          Click to drop the ruler — corners snap · then select a shape to see its size and offsets
         </div>
       )}
       {measureMode && (

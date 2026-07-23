@@ -125,6 +125,10 @@ interface SceneState {
   placing: PrimitiveKind | null;
   alignMode: boolean;
   measureMode: boolean;
+  // Ruler datum on the workplane: while set, the selection shows persistent
+  // dimensions and its offset from this origin. null = ruler off.
+  rulerOrigin: [number, number] | null;
+  rulerPlacing: boolean;
   // Which sketch tool dialog is open, if any; sketchEditId points at an
   // existing node being re-edited (null = creating a new shape).
   sketchMode: "scribble" | "extrude" | "revolve" | null;
@@ -137,6 +141,11 @@ interface SceneState {
   setPlacing: (kind: PrimitiveKind | null) => void;
   setAlignMode: (on: boolean) => void;
   setMeasureMode: (on: boolean) => void;
+  toggleRuler: () => void;
+  setRulerOrigin: (origin: [number, number] | null) => void;
+  // Move the selection so its min corner sits at an exact offset from the
+  // ruler origin along one axis.
+  setOffsetFromRuler: (axis: 0 | 1 | 2, value: number) => void;
   setSketchMode: (mode: "scribble" | "extrude" | "revolve" | null) => void;
   editSketch: (id: string) => void;
   addShapeWithParams: (kind: PrimitiveKind, params: Record<string, number | string>) => void;
@@ -209,6 +218,8 @@ export const useScene = create<SceneState>()(
       placing: null,
       alignMode: false,
       measureMode: false,
+      rulerOrigin: null,
+      rulerPlacing: false,
       sketchMode: null,
       sketchEditId: null,
       cloudProjectId: null,
@@ -302,6 +313,39 @@ export const useScene = create<SceneState>()(
       setAlignMode: (on) => set({ alignMode: on, ...(on ? { measureMode: false } : {}) }),
       setMeasureMode: (on) =>
         set({ measureMode: on, ...(on ? { alignMode: false, cruiseMode: false } : {}) }),
+
+      toggleRuler: () => {
+        const { rulerOrigin, rulerPlacing } = get();
+        if (rulerOrigin || rulerPlacing) set({ rulerOrigin: null, rulerPlacing: false });
+        else set({ rulerPlacing: true, measureMode: false, alignMode: false });
+      },
+      setRulerOrigin: (origin) => set({ rulerOrigin: origin, rulerPlacing: false }),
+
+      setOffsetFromRuler: (axis, value) => {
+        const { selection, project, rulerOrigin } = get();
+        if (!rulerOrigin) return;
+        const origin = [rulerOrigin[0], rulerOrigin[1], 0];
+        const items = selection
+          .map((id) => ({ id, box: sceneApi.getNodeBounds(id) }))
+          .filter(
+            (x): x is { id: string; box: THREE.Box3 } =>
+              !!project.nodes[x.id] && !project.nodes[x.id].locked && !!x.box,
+          );
+        if (items.length === 0) return;
+        const box = items.reduce((u, x) => u.union(x.box), new THREE.Box3());
+        const shift = origin[axis] + value - box.min.getComponent(axis);
+        if (!Number.isFinite(shift)) return;
+        set((s) => {
+          const nodes = { ...s.project.nodes };
+          for (const { id } of items) {
+            const n = nodes[id];
+            const position = [...n.position] as Vec3;
+            position[axis] += shift;
+            nodes[id] = { ...n, position };
+          }
+          return { project: { ...s.project, nodes } };
+        });
+      },
       setSketchMode: (mode) => set({ sketchMode: mode, sketchEditId: null }),
 
       editSketch: (id) => {

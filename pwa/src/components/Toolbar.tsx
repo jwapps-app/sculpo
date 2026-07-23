@@ -8,6 +8,7 @@ import {
   FileUp,
   FlipHorizontal2,
   FolderOpen,
+  Frame,
   Group as GroupIcon,
   Hand,
   Layers,
@@ -122,6 +123,8 @@ export function Toolbar() {
   const setCruiseMode = useScene((s) => s.setCruiseMode);
   const measureMode = useScene((s) => s.measureMode);
   const setMeasureMode = useScene((s) => s.setMeasureMode);
+  const rulerOn = useScene((s) => s.rulerOrigin !== null || s.rulerPlacing);
+  const toggleRuler = useScene((s) => s.toggleRuler);
   const dropSelectedToWorkplane = useScene((s) => s.dropSelectedToWorkplane);
   const selection = useScene((s) => s.selection);
   const nodes = useScene((s) => s.project.nodes);
@@ -265,6 +268,12 @@ export function Toolbar() {
         active={measureMode}
         onClick={() => setMeasureMode(!measureMode)}
         label="Measure (M) — click two points; corners and midpoints snap"
+      />
+      <IconButton
+        icon={Frame}
+        active={rulerOn}
+        onClick={toggleRuler}
+        label="Ruler — drop a datum; the selection shows live sizes and offsets"
       />
 
       <Divider />

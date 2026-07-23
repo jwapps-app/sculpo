@@ -128,6 +128,7 @@ export function useShortcuts() {
           break;
         case "escape":
           if (s.sketchMode) s.setSketchMode(null);
+          else if (s.rulerPlacing || s.rulerOrigin) s.toggleRuler();
           else if (s.placing) s.setPlacing(null);
           else if (s.workplaneArmed) s.setWorkplaneArmed(false);
           else if (s.alignMode) s.setAlignMode(false);
