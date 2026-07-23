@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { Cloud, KeyRound, LogOut, Trash2, UserPlus, X } from "lucide-react";
+import { Cloud, CloudOff, KeyRound, LogOut, Trash2, UserPlus, X } from "lucide-react";
 import { api, type AdminOverview, type ProjectMeta } from "../lib/api";
 import { useScene } from "../state/store";
 import { useAuth } from "../state/auth";
 import { markSynced, syncNow, useCloudSync } from "../state/cloudSync";
+import { ServerSettings } from "./ServerSettings";
 
 // Cloud projects for the signed-in user: list/open/save/delete designs on the
 // server; admins manage users here too. Sign-in itself happens at the gate
@@ -37,6 +38,42 @@ export function CloudPanel() {
       }
     }
   }, [open, status, me]);
+
+  // Standalone (no server configured or reachable): offer to connect one.
+  // Without this a packaged build could never opt into cloud sync.
+  if (status === "offline") {
+    return (
+      <div className="relative">
+        <button
+          onClick={() => setOpen(!open)}
+          title="Working offline — tap to connect a server"
+          aria-label="Server settings"
+          className={`rounded-md p-1.5 ${
+            open ? "bg-neutral-800 text-white" : "text-neutral-500 hover:bg-neutral-200"
+          }`}
+        >
+          <CloudOff size={17} strokeWidth={1.8} />
+        </button>
+        {open && (
+          <>
+            <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+            <div className="absolute right-0 top-full z-20 mt-1 w-72 rounded-md border border-neutral-200 bg-white p-3 shadow-lg">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-sm font-semibold">Server</span>
+                <button
+                  onClick={() => setOpen(false)}
+                  className="text-neutral-400 hover:text-neutral-700"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+              <ServerSettings onDone={() => setOpen(false)} />
+            </div>
+          </>
+        )}
+      </div>
+    );
+  }
 
   if (status !== "signed-in" || !me) return null;
 

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Canvas, useThree } from "@react-three/fiber";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Grid, OrbitControls, OrthographicCamera, PerspectiveCamera } from "@react-three/drei";
 import * as THREE from "three";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
@@ -133,6 +133,20 @@ function Cameras() {
       />
     </>
   );
+}
+
+// With one finger doing double duty — orbit the view, but also drag gizmos,
+// resize handles, the view cube and measure points — orbit has to stand down
+// whenever one of those owns the gesture. On mouse this was handled by using
+// different buttons; on touch there's only the one.
+function ControlsGate() {
+  const controls = useThree((s) => s.controls) as OrbitControlsImpl | null;
+  useFrame(() => {
+    if (!controls) return;
+    const busy = gizmoState.busy();
+    if (controls.enabled === busy) controls.enabled = !busy;
+  });
+  return null;
 }
 
 // Build-plate outline: the printable footprint, so parts can be laid out
@@ -280,6 +294,9 @@ export function Viewport() {
       return;
     }
     if (s.placing) {
+      // On touch there's no hover to have positioned the ghost, so resolve the
+      // drop point from this very press before committing.
+      if (e.pointerType !== "mouse") sceneApi.placementMove(e.clientX, e.clientY);
       if (placementState.valid) {
         const eu = new THREE.Euler().setFromQuaternion(placementState.quaternion, "XYZ");
         s.placeShapeAt(
@@ -304,6 +321,8 @@ export function Viewport() {
       }
     }
     if (sceneApi.hitTestNodes(e.clientX, e.clientY)) return;
+    // Marquee is a mouse gesture: on touch a one-finger drag orbits the view.
+    if (e.pointerType !== "mouse") return;
     pendingMarquee.current = { x: e.clientX, y: e.clientY };
   };
 
@@ -479,12 +498,20 @@ export function Viewport() {
         <MeasureOverlay />
         <RulerOverlay />
         <PlacementPreview />
+        <ControlsGate />
         <OrbitControls
           makeDefault
           mouseButtons={{
             LEFT: undefined,
             MIDDLE: THREE.MOUSE.PAN,
             RIGHT: THREE.MOUSE.ROTATE,
+          }}
+          // Touch: one finger orbits (there's no right button to orbit with),
+          // two fingers pinch-zoom and pan. One-finger drags on a shape or a
+          // handle are handled by ControlsGate disabling orbit for them.
+          touches={{
+            ONE: THREE.TOUCH.ROTATE,
+            TWO: THREE.TOUCH.DOLLY_PAN,
           }}
         />
         <SceneRig />

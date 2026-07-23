@@ -1,9 +1,29 @@
 import type { Project } from "../types/scene";
 
-// Same-origin in production (nginx proxies /api); the dev server proxies to
-// the local backend. All cloud features degrade away if the API is absent.
-const BASE = "/api/v1";
+// Same-origin by default: in production nginx proxies /api, and the dev
+// server proxies to the local backend. Packaged builds (the iPad app) have no
+// server of their own, so they can be pointed at one — set a server URL and
+// requests go there instead. Unset means standalone: every cloud feature
+// degrades away and the app works entirely offline.
+const SERVER_KEY = "server-url";
 const TOKEN_KEY = "session-token";
+
+export function getServerUrl(): string {
+  return localStorage.getItem(SERVER_KEY) ?? "";
+}
+
+export function setServerUrl(url: string | null) {
+  const clean = url?.trim().replace(/\/+$/, "");
+  if (clean) localStorage.setItem(SERVER_KEY, clean);
+  else localStorage.removeItem(SERVER_KEY);
+  // Any session belonged to the previous server.
+  setToken(null);
+}
+
+function base(): string {
+  const server = getServerUrl();
+  return server ? `${server}/api/v1` : "/api/v1";
+}
 
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
@@ -31,7 +51,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   const token = getToken();
   if (token) headers.Authorization = `Bearer ${token}`;
-  const res = await fetch(`${BASE}${path}`, { ...init, headers });
+  const res = await fetch(`${base()}${path}`, { ...init, headers });
   if (res.status === 401) {
     setToken(null);
     onUnauthorized?.();
@@ -74,7 +94,7 @@ export interface AdminOverview {
 export const api = {
   async available(): Promise<boolean> {
     try {
-      const res = await fetch(`${BASE}/health`);
+      const res = await fetch(`${base()}/health`);
       return res.ok;
     } catch {
       return false;

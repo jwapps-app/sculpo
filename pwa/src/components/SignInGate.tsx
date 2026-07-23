@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { APP_NAME } from "../constants/branding";
 import { useAuth } from "../state/auth";
+import { ServerSettings } from "./ServerSettings";
 
 // Full-screen sign-in gate, shown instead of the workspace whenever a backend
 // is present and nobody is signed in.
@@ -10,6 +11,7 @@ export function SignInGate() {
   const [password, setPassword] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [showServer, setShowServer] = useState(false);
 
   const canSubmit = username.trim().length >= 3 && password.length >= 8 && !busy;
   // Say WHY the buttons are disabled instead of leaving them mysteriously gray.
@@ -79,6 +81,19 @@ export function SignInGate() {
         </button>
         {hint && <p className="text-xs text-neutral-500">{hint}</p>}
         {notice && <p className="text-xs text-red-600">{notice}</p>}
+        {showServer ? (
+          <div className="border-t border-neutral-200 pt-3">
+            <ServerSettings onDone={() => setShowServer(false)} />
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setShowServer(true)}
+            className="w-full text-center text-xs text-neutral-500 hover:text-neutral-800"
+          >
+            Change server or work offline
+          </button>
+        )}
       </form>
     </div>
   );

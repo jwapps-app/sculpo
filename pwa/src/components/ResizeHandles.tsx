@@ -7,6 +7,7 @@ import { sceneApi } from "../lib/sceneApi";
 import { gizmoState } from "../lib/gizmoState";
 import { AXIS_COLORS } from "../constants/ui";
 import { formatLength, fromDisplay } from "../lib/units";
+import { isCoarsePointer } from "../lib/pointer";
 import type { Vec3 } from "../types/scene";
 
 interface HandleDef {
@@ -129,6 +130,9 @@ export function ResizeHandles() {
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const scheduleHideLabel = () => {
+    // On touch there is no hover to leave, so a tapped label must persist —
+    // otherwise it would vanish before it could be tapped to type a size.
+    if (isCoarsePointer()) return;
     if (hideTimer.current) clearTimeout(hideTimer.current);
     hideTimer.current = setTimeout(() => {
       if (editingRef.current === null && !labelHover.current && !drag.current) {
@@ -229,8 +233,10 @@ export function ResizeHandles() {
       if (!mesh) continue;
       handlePosition(def, box, pos);
       mesh.position.copy(pos);
-      const s = camera.position.distanceTo(pos) * 0.011;
-      mesh.scale.setScalar(Math.max(s, 0.4));
+      // Fingertips need a bigger grab target than a cursor does.
+      const coarse = isCoarsePointer();
+      const s = camera.position.distanceTo(pos) * (coarse ? 0.019 : 0.011);
+      mesh.scale.setScalar(Math.max(s, coarse ? 0.8 : 0.4));
     }
   });
 
@@ -315,8 +321,12 @@ export function ResizeHandles() {
     window.removeEventListener("pointermove", onMove);
     window.removeEventListener("pointerup", onUp);
     // A click that never became a drag commits nothing; the dimension label
-    // it revealed stays up for editing.
-    if (!d || !d.started) return;
+    // it revealed stays up for editing. On touch, surface that label on tap —
+    // there was no hover to reveal it.
+    if (!d || !d.started) {
+      if (d && isCoarsePointer()) showLabelFor(d.def);
+      return;
+    }
     commitObjects(d.objects);
     setLabel(null);
   };

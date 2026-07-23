@@ -5,6 +5,7 @@ import { useScene, type AlignMode, type Axis } from "../state/store";
 import { sceneApi } from "../lib/sceneApi";
 import { gizmoState } from "../lib/gizmoState";
 import { AXIS_COLORS } from "../constants/ui";
+import { isCoarsePointer } from "../lib/pointer";
 
 interface DotDef {
   key: string;
@@ -96,7 +97,11 @@ export function AlignDots() {
       else inert.current.add(def.key);
 
       const hovered = hover?.key === def.key && moves;
-      mesh.scale.setScalar(Math.max(dist * (hovered ? 0.013 : 0.009), 0.4));
+      // Fingertips need a bigger target than a cursor does.
+      const coarse = isCoarsePointer();
+      const base = coarse ? 0.016 : 0.009;
+      const big = coarse ? 0.02 : 0.013;
+      mesh.scale.setScalar(Math.max(dist * (hovered ? big : base), coarse ? 0.7 : 0.4));
       const mat = mesh.material as THREE.MeshBasicMaterial;
       mat.color.set(moves ? AXIS_COLORS[def.axis] : "#b8bcc2");
       mat.opacity = moves ? (hovered ? 1 : 0.85) : 0.5;

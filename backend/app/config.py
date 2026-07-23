@@ -5,6 +5,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _PLACEHOLDER_SECRETS = {"dev-secret-change-me", "changeme", "secret", ""}
 
+# Origins the native shells serve their bundled web app from.
+PACKAGED_APP_ORIGINS = ["app://sculpo"]
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
@@ -35,7 +38,12 @@ class Settings(BaseSettings):
 
     @property
     def cors_origins(self) -> list[str]:
-        return [o.strip() for o in self.allowed_origins.split(",") if o.strip()]
+        configured = [o.strip() for o in self.allowed_origins.split(",") if o.strip()]
+        # The packaged apps serve their bundle from a fixed custom-scheme
+        # origin, so they can reach any Sculpo server without the operator
+        # having to allowlist anything. Safe because auth is a bearer token,
+        # never a cookie — CORS is not what protects this API.
+        return [*configured, *PACKAGED_APP_ORIGINS]
 
     @property
     def admin_user_set(self) -> set[str]:
