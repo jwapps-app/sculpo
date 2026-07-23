@@ -1,6 +1,7 @@
 import { useRef } from "react";
 import { GizmoHelper, GizmoViewcube } from "@react-three/drei";
 import { sceneApi } from "../lib/sceneApi";
+import { gizmoState } from "../lib/gizmoState";
 
 const DRAG_THRESHOLD = 3; // px before a press counts as an orbit, not a click
 
@@ -26,6 +27,8 @@ export function ViewCube() {
   const onUp = () => {
     const d = drag.current;
     drag.current = null;
+    gizmoState.handleActive = false;
+    gizmoState.lastInteractionEnd = performance.now();
     window.removeEventListener("pointermove", onMove);
     window.removeEventListener("pointerup", onUp);
     if (!d?.moved) return;
@@ -44,6 +47,9 @@ export function ViewCube() {
       <group
         onPointerDown={(e) => {
           e.stopPropagation();
+          // Tell the viewport a gizmo owns this press, so it doesn't start a
+          // marquee (or drop a measure point) behind the cube.
+          gizmoState.handleActive = true;
           drag.current = { x: e.clientX, y: e.clientY, moved: false };
           window.addEventListener("pointermove", onMove);
           window.addEventListener("pointerup", onUp);

@@ -256,6 +256,9 @@ export function Viewport() {
   const onPointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
     if (!(e.target instanceof HTMLCanvasElement)) return;
+    // A gizmo, resize handle, or the view cube owns this press — no viewport
+    // tool should also react to it.
+    if (gizmoState.busy()) return;
     const s = useScene.getState();
     if (s.rulerPlacing) {
       const snap = sceneApi.measureSnap(e.clientX, e.clientY);
@@ -290,7 +293,6 @@ export function Viewport() {
       return;
     }
     if (s.workplaneArmed) return;
-    if (gizmoState.busy()) return;
     if (s.cruiseMode && !s.editingGroupId) {
       const id = sceneApi.hitNodeAt(e.clientX, e.clientY);
       if (id && s.project.nodes[id] && !s.project.nodes[id].locked) {
@@ -325,7 +327,11 @@ export function Viewport() {
     if (pending && !marquee) {
       if (Math.abs(e.clientX - pending.x) >= 4 || Math.abs(e.clientY - pending.y) >= 4) {
         setMarquee({ x1: pending.x, y1: pending.y, x2: e.clientX, y2: e.clientY });
-        wrapper.current?.setPointerCapture(e.pointerId);
+        try {
+          wrapper.current?.setPointerCapture(e.pointerId);
+        } catch {
+          // capture is an optimization; the drag still works without it
+        }
       }
       return;
     }
@@ -345,7 +351,11 @@ export function Viewport() {
       return;
     }
     if (!marquee) return;
-    wrapper.current?.releasePointerCapture(e.pointerId);
+    try {
+      wrapper.current?.releasePointerCapture(e.pointerId);
+    } catch {
+      // never captured; nothing to release
+    }
     const { x1, y1, x2, y2 } = marquee;
     setMarquee(null);
     marqueeEndedAt.current = performance.now();
