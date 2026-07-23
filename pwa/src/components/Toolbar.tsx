@@ -37,6 +37,16 @@ import { saveProjectFile, parseProjectFile } from "../lib/projectFile";
 import { importMeshFile } from "../lib/importMesh";
 import { CloudPanel } from "./CloudPanel";
 
+// Common FDM build plates (mm). Sizes, not brand promises.
+const BED_PRESETS: { label: string; size: [number, number] }[] = [
+  { label: "180 × 180", size: [180, 180] },
+  { label: "220 × 220", size: [220, 220] },
+  { label: "250 × 210", size: [250, 210] },
+  { label: "256 × 256", size: [256, 256] },
+  { label: "300 × 300", size: [300, 300] },
+  { label: "350 × 350", size: [350, 350] },
+];
+
 const MODES: { mode: TransformMode; label: string; key: string; icon: typeof Move }[] = [
   { mode: "translate", label: "Move", key: "G", icon: Move },
   { mode: "rotate", label: "Rotate", key: "R", icon: RotateCw },
@@ -103,6 +113,8 @@ export function Toolbar() {
   const setSnapStep = useScene((s) => s.setSnapStep);
   const units = useScene((s) => s.units);
   const setUnits = useScene((s) => s.setUnits);
+  const bed = useScene((s) => s.bed);
+  const setBed = useScene((s) => s.setBed);
   const workplaneArmed = useScene((s) => s.workplaneArmed);
   const workplaneSet = useScene((s) => s.workplane !== null);
   const setWorkplaneArmed = useScene((s) => s.setWorkplaneArmed);
@@ -133,7 +145,7 @@ export function Toolbar() {
 
   const fileInput = useRef<HTMLInputElement>(null);
   const importInput = useRef<HTMLInputElement>(null);
-  const [menu, setMenu] = useState<"mirror" | null>(null);
+  const [menu, setMenu] = useState<"mirror" | "export" | null>(null);
 
   const hasSelection = selection.length > 0;
   const canGroup = selection.length >= 2;
@@ -143,10 +155,19 @@ export function Toolbar() {
   });
   const anyLocked = selection.some((id) => nodes[id]?.locked);
 
-  const onExport = () => {
-    const { exported, skippedHoles } = exportSceneStl(useScene.getState().project);
+  const onExport = (format: "stl" | "obj", selectionOnly: boolean) => {
+    setMenu(null);
+    const state = useScene.getState();
+    const { exported, skippedHoles } = exportSceneStl(state.project, {
+      format,
+      onlyIds: selectionOnly ? state.selection : undefined,
+    });
     if (exported === 0) {
-      alert("Nothing to export — the scene has no solid geometry.");
+      alert(
+        selectionOnly
+          ? "Nothing to export — the selection has no solid geometry."
+          : "Nothing to export — the scene has no solid geometry.",
+      );
     } else if (skippedHoles > 0) {
       alert(
         `Exported ${exported} object(s). Skipped ${skippedHoles} ungrouped hole(s) — a hole only cuts inside a group.`,
@@ -207,6 +228,24 @@ export function Toolbar() {
       >
         <option value="mm">mm</option>
         <option value="in">in</option>
+      </select>
+      <select
+        value={bed ? `${bed[0]}x${bed[1]}` : ""}
+        onChange={(e) => {
+          const v = e.target.value;
+          if (!v) return setBed(null);
+          const [w, d] = v.split("x").map(Number);
+          setBed([w, d]);
+        }}
+        title="Build plate — show your printer's footprint"
+        className="rounded border border-neutral-300 px-0.5 py-0.5 text-xs text-neutral-600"
+      >
+        <option value="">No plate</option>
+        {BED_PRESETS.map((b) => (
+          <option key={b.label} value={`${b.size[0]}x${b.size[1]}`}>
+            {b.label}
+          </option>
+        ))}
       </select>
 
       <IconButton
@@ -332,7 +371,48 @@ export function Toolbar() {
       />
       <CloudPanel />
       <span className="mx-0.5" />
-      <IconButton icon={Printer} onClick={onExport} accent label="Export STL for printing" />
+      <div className="relative">
+        <button
+          onClick={() => setMenu(menu === "export" ? null : "export")}
+          title="Export for printing"
+          aria-label="Export"
+          className="rounded-md bg-blue-600 p-1.5 text-white hover:bg-blue-700"
+        >
+          <Printer size={17} strokeWidth={1.8} />
+        </button>
+        {menu === "export" && (
+          <Popover onClose={() => setMenu(null)}>
+            <div className="w-44 space-y-1">
+              <button
+                onClick={() => onExport("stl", false)}
+                className="w-full rounded border border-neutral-300 px-2 py-1 text-left text-xs hover:bg-neutral-100"
+              >
+                STL — everything
+              </button>
+              <button
+                onClick={() => onExport("stl", true)}
+                disabled={!hasSelection}
+                className="w-full rounded border border-neutral-300 px-2 py-1 text-left text-xs hover:bg-neutral-100 disabled:opacity-40"
+              >
+                STL — selection only
+              </button>
+              <button
+                onClick={() => onExport("obj", false)}
+                className="w-full rounded border border-neutral-300 px-2 py-1 text-left text-xs hover:bg-neutral-100"
+              >
+                OBJ — everything
+              </button>
+              <button
+                onClick={() => onExport("obj", true)}
+                disabled={!hasSelection}
+                className="w-full rounded border border-neutral-300 px-2 py-1 text-left text-xs hover:bg-neutral-100 disabled:opacity-40"
+              >
+                OBJ — selection only
+              </button>
+            </div>
+          </Popover>
+        )}
+      </div>
 
       <input
         ref={fileInput}

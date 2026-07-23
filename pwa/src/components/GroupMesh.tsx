@@ -18,11 +18,12 @@ export function GroupMesh({ node, dimmed = false }: { node: GroupNode; dimmed?: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [signature],
   );
-  const color = useMemo(
+  const inherited = useMemo(
     () => firstSolidColor(node, nodes),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [signature],
   );
+  const color = node.color ?? inherited;
 
   if (node.hidden || !geometry) return null;
 

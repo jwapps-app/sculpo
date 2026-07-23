@@ -113,6 +113,8 @@ interface SceneState {
   snap: boolean;
   snapStep: number;
   units: Units;
+  // Build-plate footprint in mm, or null for an unbounded workplane.
+  bed: [number, number] | null;
   workplane: Workplane | null;
   workplaneArmed: boolean;
   dragInfo: string | null;
@@ -153,6 +155,7 @@ interface SceneState {
   pasteClipboard: () => void;
   selectAll: () => void;
   toggleTransparentSelected: () => void;
+  setNodeColor: (id: string, color: string | undefined) => void;
   groupSelected: () => void;
   ungroupSelected: () => void;
   setProjectName: (name: string) => void;
@@ -170,6 +173,7 @@ interface SceneState {
   setSnap: (snap: boolean) => void;
   setSnapStep: (step: number) => void;
   setUnits: (units: Units) => void;
+  setBed: (bed: [number, number] | null) => void;
   setWorkplane: (wp: Workplane | null) => void;
   setWorkplaneArmed: (armed: boolean) => void;
   setDragInfo: (info: string | null) => void;
@@ -186,6 +190,15 @@ export const useScene = create<SceneState>()(
       snap: true,
       snapStep: localStorage.getItem("units") === "in" ? DEFAULT_STEP.in : DEFAULT_STEP.mm,
       units: (localStorage.getItem("units") === "in" ? "in" : "mm") as Units,
+      bed: (() => {
+        try {
+          const raw = localStorage.getItem("bed");
+          const v = raw ? JSON.parse(raw) : null;
+          return Array.isArray(v) && v.length === 2 ? (v as [number, number]) : null;
+        } catch {
+          return null;
+        }
+      })(),
       workplane: null,
       workplaneArmed: false,
       dragInfo: null,
@@ -649,6 +662,18 @@ export const useScene = create<SceneState>()(
         set({ selection: scope.filter((id) => !project.nodes[id]?.hidden) });
       },
 
+      // Groups may override their inherited color; undefined restores it.
+      setNodeColor: (id, color) => {
+        set((s) => {
+          const node = s.project.nodes[id];
+          if (!node) return {};
+          const next = { ...node } as SceneNode & { color?: string };
+          if (color === undefined) delete next.color;
+          else next.color = color;
+          return { project: { ...s.project, nodes: { ...s.project.nodes, [id]: next } } };
+        });
+      },
+
       toggleTransparentSelected: () => {
         const { selection, project } = get();
         const ids = selection.filter((id) => project.nodes[id]);
@@ -801,6 +826,11 @@ export const useScene = create<SceneState>()(
       setUnits: (units) => {
         localStorage.setItem("units", units);
         set({ units, snapStep: DEFAULT_STEP[units] });
+      },
+      setBed: (bed) => {
+        if (bed) localStorage.setItem("bed", JSON.stringify(bed));
+        else localStorage.removeItem("bed");
+        set({ bed });
       },
       setWorkplane: (wp) => set({ workplane: wp, workplaneArmed: false }),
       setWorkplaneArmed: (armed) => set({ workplaneArmed: armed }),

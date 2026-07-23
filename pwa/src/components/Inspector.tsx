@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { AXIS_COLORS } from "../constants/ui";
+import { FONT_NAMES } from "../lib/primitives";
 import {
   COUNT_PARAMS,
   fromDisplay as mmFromDisplay,
@@ -86,6 +87,8 @@ function VecFields({
 
 // Params that hold encoded geometry/sketch data, not user-editable values.
 const HIDDEN_PARAMS = new Set(["pos", "idx", "profile", "paths"]);
+// Params where 0 is meaningful rather than degenerate.
+const ZEROABLE_PARAMS = new Set(["radius", "bevel"]);
 
 function ShapeParams({ node }: { node: ShapeNode }) {
   const updateShape = useScene((s) => s.updateShape);
@@ -102,20 +105,39 @@ function ShapeParams({ node }: { node: ShapeNode }) {
       <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
         {node.kind} params ({units})
       </div>
-      {stringKeys.map((key) => (
-        <label key={key} className="flex items-center justify-between gap-2 text-sm">
-          <span className="text-neutral-500">{key}</span>
-          <input
-            type="text"
-            key={`${node.id}-${key}`}
-            defaultValue={node.params[key] as string}
-            onBlur={(e) =>
-              updateShape(node.id, { params: { ...node.params, [key]: e.target.value } })
-            }
-            className="w-28 rounded border border-neutral-300 px-1.5 py-0.5 text-sm"
-          />
-        </label>
-      ))}
+      {stringKeys.map((key) =>
+        key === "font" ? (
+          <label key={key} className="flex items-center justify-between gap-2 text-sm">
+            <span className="text-neutral-500">{key}</span>
+            <select
+              value={node.params[key] as string}
+              onChange={(e) =>
+                updateShape(node.id, { params: { ...node.params, [key]: e.target.value } })
+              }
+              className="w-28 rounded border border-neutral-300 px-1 py-0.5 text-sm"
+            >
+              {FONT_NAMES.map((f) => (
+                <option key={f} value={f}>
+                  {f}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : (
+          <label key={key} className="flex items-center justify-between gap-2 text-sm">
+            <span className="text-neutral-500">{key}</span>
+            <input
+              type="text"
+              key={`${node.id}-${key}`}
+              defaultValue={node.params[key] as string}
+              onBlur={(e) =>
+                updateShape(node.id, { params: { ...node.params, [key]: e.target.value } })
+              }
+              className="w-28 rounded border border-neutral-300 px-1.5 py-0.5 text-sm"
+            />
+          </label>
+        ),
+      )}
       {numericKeys.map((key) => {
         const isCount = COUNT_PARAMS.has(key);
         const u: Units = isCount ? "mm" : units; // counts pass through untouched
@@ -129,7 +151,9 @@ function ShapeParams({ node }: { node: ShapeNode }) {
               step={isCount || u === "mm" ? 1 : 0.125}
               onChange={(e) => {
                 const v = Number(e.target.value);
-                if (!Number.isFinite(v) || v <= 0) return;
+                // Rounding params are legitimately zero (= sharp edges).
+                const minAllowed = ZEROABLE_PARAMS.has(key) ? 0 : Number.MIN_VALUE;
+                if (!Number.isFinite(v) || v < minAllowed) return;
                 updateShape(node.id, {
                   params: { ...node.params, [key]: isCount ? v : mmFromDisplay(v, u) },
                 });
@@ -233,6 +257,7 @@ export function Inspector() {
   const nodes = useScene((s) => s.project.nodes);
   const updateShape = useScene((s) => s.updateShape);
   const setTransform = useScene((s) => s.setTransform);
+  const setNodeColor = useScene((s) => s.setNodeColor);
   const units = useScene((s) => s.units);
 
   const selected = selection.map((id) => nodes[id]).filter((n) => !!n);
@@ -265,6 +290,26 @@ export function Inspector() {
         <div className="text-sm font-semibold">
           Group · {group.childIds.length} children
         </div>
+        <label className="flex items-center justify-between gap-2 text-sm">
+          <span className="text-neutral-500">Color</span>
+          <span className="flex items-center gap-1">
+            <input
+              type="color"
+              value={group.color ?? "#b0b0b0"}
+              onChange={(e) =>
+                setNodeColor(group.id, e.target.value)
+              }
+              className="h-7 w-14 cursor-pointer rounded border border-neutral-300"
+            />
+            <button
+              onClick={() => setNodeColor(group.id, undefined)}
+              title="Inherit from the first solid inside"
+              className="rounded border border-neutral-300 px-1.5 py-1 text-xs hover:bg-neutral-100"
+            >
+              Auto
+            </button>
+          </span>
+        </label>
         <VecFields
           title={`Position (${units})`}
           value={group.position}

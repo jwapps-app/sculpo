@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { FontLoader, type Font } from "three/addons/loaders/FontLoader.js";
 import { TextGeometry } from "three/addons/geometries/TextGeometry.js";
+import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import type { PrimitiveKind, ShapeNode } from "../types/scene";
 import { newId } from "./id";
 import { decodeMeshGeometry } from "./meshData";
@@ -12,11 +13,26 @@ import {
   scribbleGeometry,
 } from "./sketchGeometry";
 import typefaceData from "../assets/fonts/helvetiker_regular.typeface.json";
+import typefaceBold from "../assets/fonts/helvetiker_bold.typeface.json";
+import typefaceSerif from "../assets/fonts/optimer_regular.typeface.json";
 
-let font: Font | null = null;
-function getFont(): Font {
-  font ??= new FontLoader().parse(typefaceData);
-  return font;
+// Bundled typefaces. Parsed lazily and cached — parsing is the expensive part.
+export const FONTS: Record<string, unknown> = {
+  sans: typefaceData,
+  "sans bold": typefaceBold,
+  serif: typefaceSerif,
+};
+export const FONT_NAMES = Object.keys(FONTS);
+
+const fontCache = new Map<string, Font>();
+function getFont(name: string): Font {
+  const key = FONTS[name] ? name : "sans";
+  let f = fontCache.get(key);
+  if (!f) {
+    f = new FontLoader().parse(FONTS[key] as Parameters<FontLoader["parse"]>[0]);
+    fontCache.set(key, f);
+  }
+  return f;
 }
 
 // Units are millimeters. World is Z-up; three's Y-up primitives (cylinder,
@@ -26,12 +42,12 @@ export const DEFAULT_PARAMS: Record<
   PrimitiveKind,
   Record<string, number | string>
 > = {
-  box: { w: 20, d: 20, h: 20 },
-  cylinder: { r: 10, h: 20, segments: 48 },
+  box: { w: 20, d: 20, h: 20, radius: 0 },
+  cylinder: { r: 10, h: 20, segments: 48, bevel: 0 },
   sphere: { r: 10, segments: 32 },
   cone: { r: 10, h: 20, segments: 48 },
   torus: { r: 10, tube: 4, segments: 48 },
-  text: { value: "Text", size: 10, depth: 5 },
+  text: { value: "Text", font: "sans", size: 10, depth: 5 },
   wedge: { w: 20, d: 20, h: 20 },
   roof: { w: 20, d: 20, h: 20 },
   pyramid: { w: 20, h: 20 },
@@ -88,16 +104,47 @@ export function buildGeometry(node: ShapeNode): THREE.BufferGeometry | null {
   const p = node.params;
   let geo: THREE.BufferGeometry;
   switch (node.kind) {
-    case "box":
-      geo = new THREE.BoxGeometry(num(p, "w", 20), num(p, "d", 20), num(p, "h", 20));
+    case "box": {
+      const w = num(p, "w", 20);
+      const d = num(p, "d", 20);
+      const h = num(p, "h", 20);
+      // radius rounds every edge; capped at half the smallest side.
+      const radius = Math.min(num(p, "radius", 0), Math.min(w, d, h) / 2 - 0.01);
+      geo =
+        radius > 0.01
+          ? new RoundedBoxGeometry(w, d, h, 4, radius)
+          : new THREE.BoxGeometry(w, d, h);
       break;
+    }
     case "cylinder": {
-      geo = new THREE.CylinderGeometry(
-        num(p, "r", 10),
-        num(p, "r", 10),
-        num(p, "h", 20),
-        Math.max(3, num(p, "segments", 48)),
-      );
+      const r = num(p, "r", 10);
+      const h = num(p, "h", 20);
+      const segments = Math.max(3, num(p, "segments", 48));
+      // bevel rounds the two rim edges; lathe a profile with quarter-arcs.
+      const bevel = Math.min(num(p, "bevel", 0), Math.min(r, h / 2) - 0.01);
+      if (bevel > 0.01) {
+        const steps = 6;
+        const profile: THREE.Vector2[] = [new THREE.Vector2(0, -h / 2)];
+        for (let i = 0; i <= steps; i++) {
+          const a = (i / steps) * (Math.PI / 2);
+          profile.push(
+            new THREE.Vector2(
+              r - bevel + bevel * Math.sin(a),
+              -h / 2 + bevel - bevel * Math.cos(a),
+            ),
+          );
+        }
+        for (let i = 0; i <= steps; i++) {
+          const a = (i / steps) * (Math.PI / 2);
+          profile.push(
+            new THREE.Vector2(r - bevel + bevel * Math.cos(a), h / 2 - bevel + bevel * Math.sin(a)),
+          );
+        }
+        profile.push(new THREE.Vector2(0, h / 2));
+        geo = new THREE.LatheGeometry(profile, segments);
+      } else {
+        geo = new THREE.CylinderGeometry(r, r, h, segments);
+      }
       geo.rotateX(Math.PI / 2);
       break;
     }
@@ -124,7 +171,7 @@ export function buildGeometry(node: ShapeNode): THREE.BufferGeometry | null {
       const value = String(p.value ?? "").trim() || "Text";
       // Lies flat in the XY plane, extruded up along Z, centered on its origin.
       geo = new TextGeometry(value, {
-        font: getFont(),
+        font: getFont(String(p.font ?? "sans")),
         size: num(p, "size", 10),
         depth: num(p, "depth", 5),
         curveSegments: 4,

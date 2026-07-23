@@ -48,6 +48,9 @@ export interface GroupNode {
   locked?: boolean;
   hidden?: boolean;
   transparent?: boolean;
+  // Display color for the evaluated solid; unset = inherit the first solid
+  // child's color (Tinkercad's default grouping behavior).
+  color?: string;
 }
 
 export type SceneNode = ShapeNode | GroupNode;

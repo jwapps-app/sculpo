@@ -140,6 +140,39 @@ function Cameras() {
   );
 }
 
+// Build-plate outline: the printable footprint, so parts can be laid out
+// against a real printer's bed.
+function BuildPlate() {
+  const bed = useScene((s) => s.bed);
+  const outline = useMemo(() => {
+    if (!bed) return null;
+    const [w, d] = bed;
+    const pts = [
+      new THREE.Vector3(-w / 2, -d / 2, 0),
+      new THREE.Vector3(w / 2, -d / 2, 0),
+      new THREE.Vector3(w / 2, d / 2, 0),
+      new THREE.Vector3(-w / 2, d / 2, 0),
+      new THREE.Vector3(-w / 2, -d / 2, 0),
+    ];
+    const line = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(pts),
+      new THREE.LineBasicMaterial({ color: "#2563eb", transparent: true, opacity: 0.8 }),
+    );
+    line.raycast = () => null;
+    return line;
+  }, [bed]);
+  if (!outline || !bed) return null;
+  return (
+    <>
+      <primitive object={outline} />
+      <mesh position={[0, 0, -0.05]} raycast={() => null}>
+        <planeGeometry args={bed} />
+        <meshBasicMaterial color="#2563eb" transparent opacity={0.05} />
+      </mesh>
+    </>
+  );
+}
+
 function WorkplaneGrid() {
   const workplane = useScene((s) => s.workplane);
   const quaternion = useMemo(() => {
@@ -403,6 +436,7 @@ export function Viewport() {
           fadeStrength={1.5}
           side={THREE.DoubleSide}
         />
+        <BuildPlate />
         <WorkplaneGrid />
 
         {rootOrder.map((id) => {
