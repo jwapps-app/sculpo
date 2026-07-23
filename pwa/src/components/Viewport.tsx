@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
-import { Grid, OrbitControls, OrthographicCamera, PerspectiveCamera } from "@react-three/drei";
+import {
+  GizmoHelper,
+  GizmoViewcube,
+  Grid,
+  OrbitControls,
+  OrthographicCamera,
+  PerspectiveCamera,
+} from "@react-three/drei";
 import * as THREE from "three";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import { useScene } from "../state/store";
@@ -460,6 +467,17 @@ export function Viewport() {
           }
           return renderNode(node, editingGroup !== null);
         })}
+
+        {/* Orientation cube: click a face/edge/corner to snap the camera. */}
+        <GizmoHelper alignment="top-right" margin={[64, 64]}>
+          <GizmoViewcube
+            color="#f3f4f6"
+            textColor="#374151"
+            strokeColor="#9ca3af"
+            hoverColor="#2a6cd4"
+            faces={["Right", "Left", "Back", "Front", "Top", "Bottom"]}
+          />
+        </GizmoHelper>
 
         <Gizmo />
         <ResizeHandles />
