@@ -23,9 +23,10 @@ interface DragState {
 }
 
 // A press only becomes a transform once the pointer travels past this many
-// pixels — the pixel or two a hand drifts during a click must move nothing,
-// and grazing an axis pointing toward the camera must not fling the shape.
-const DRAG_THRESHOLD = 4;
+// pixels. Set generously — a hand drifts several pixels during a normal
+// click, and because the transform re-baselines when this is crossed, the
+// dead zone costs a real drag nothing (movement just starts from here).
+const DRAG_THRESHOLD = 8;
 
 // Latest pointer position, so onMouseDown knows where the press landed.
 const lastPointer = { x: 0, y: 0 };
@@ -142,21 +143,30 @@ export function Gizmo() {
     const d = drag.current;
     if (!d) return;
     // Ignore the press until the pointer has actually traveled: hold every
-    // object at its start transform so a click can't nudge or fling a shape.
+    // object at its start transform so a click can't nudge a shape.
     if (!d.crossed) {
       const dist = Math.hypot(
         lastPointer.x - d.downClient.x,
         lastPointer.y - d.downClient.y,
       );
-      if (dist < DRAG_THRESHOLD) {
-        for (const { obj, startLocal } of d.objects) {
-          obj.position.copy(startLocal.pos);
-          obj.quaternion.copy(startLocal.quat);
-          obj.scale.copy(startLocal.scale);
-        }
-        return;
+      for (const { obj, startLocal } of d.objects) {
+        obj.position.copy(startLocal.pos);
+        obj.quaternion.copy(startLocal.quat);
+        obj.scale.copy(startLocal.scale);
       }
+      if (dist < DRAG_THRESHOLD) return;
+      // Crossing: re-baseline so the transform is measured only from HERE,
+      // not from the press. This is what kills the "fling" — the pixels of
+      // click-jitter that got us here are discarded rather than applied all
+      // at once (which, on a view-aligned plane, launches the shape).
       d.crossed = true;
+      pivot.updateMatrixWorld(true);
+      d.pivotStart = pivot.matrixWorld.clone();
+      for (const o of d.objects) {
+        o.obj.updateMatrixWorld(true);
+        o.start = o.obj.matrixWorld.clone();
+      }
+      return;
     }
     pivot.updateMatrixWorld(true);
     const delta = pivot.matrixWorld
