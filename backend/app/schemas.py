@@ -7,6 +7,9 @@ from pydantic import BaseModel, ConfigDict, Field
 class CredentialsIn(BaseModel):
     username: str = Field(min_length=3, max_length=32)
     password: str = Field(min_length=8, max_length=200)
+    # Only consulted when registering an admin username, and only if the
+    # server sets ADMIN_SIGNUP_SECRET.
+    admin_secret: str | None = Field(default=None, max_length=200)
 
 
 class UserOut(BaseModel):

@@ -43,17 +43,21 @@ async def client():
 async def sign_in(client: AsyncClient, username: str = "john") -> str:
     creds = {"username": username, "password": f"pw-for-{username}-123"}
     r = await client.post("/api/v1/auth/register", json=creds)
-    if r.status_code == 403 and username != "john":
-        # Not invited yet — have the admin invite them first.
-        admin = await sign_in(client, "john")
-        inv = await client.post(
-            "/api/v1/admin/invites",
-            json={"username": username},
-            headers={"Authorization": f"Bearer {admin}"},
-        )
-        assert inv.status_code == 201, inv.text
-        r = await client.post("/api/v1/auth/register", json=creds)
-    if r.status_code == 409:
-        r = await client.post("/api/v1/auth/login", json=creds)
+    # Registration refusals are deliberately indistinguishable (they must not
+    # reveal which usernames exist), so on any refusal try logging in first —
+    # that tells us whether the account already existed.
+    if r.status_code in (403, 409):
+        login = await client.post("/api/v1/auth/login", json=creds)
+        if login.status_code == 200:
+            return login.json()["session_token"]
+        if username != "john":
+            admin = await sign_in(client, "john")
+            inv = await client.post(
+                "/api/v1/admin/invites",
+                json={"username": username},
+                headers={"Authorization": f"Bearer {admin}"},
+            )
+            assert inv.status_code == 201, inv.text
+            r = await client.post("/api/v1/auth/register", json=creds)
     assert r.status_code in (200, 201), r.text
     return r.json()["session_token"]

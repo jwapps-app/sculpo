@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Cloud, CloudOff, KeyRound, LogOut, Trash2, UserPlus, X } from "lucide-react";
-import { api, type AdminOverview, type ProjectMeta } from "../lib/api";
+import { api, setToken, type AdminOverview, type ProjectMeta } from "../lib/api";
 import { useScene } from "../state/store";
 import { useAuth } from "../state/auth";
 import { markSynced, syncNow, useCloudSync } from "../state/cloudSync";
@@ -174,7 +174,10 @@ export function CloudPanel() {
                   onSubmit={(e) => {
                     e.preventDefault();
                     run(async () => {
-                      await api.changePassword(pwCurrent, pwNew);
+                      // The old token is revoked server-side; adopt the new one
+                      // or the app would sign itself out.
+                      const session = await api.changePassword(pwCurrent, pwNew);
+                      setToken(session.session_token);
                       setPwCurrent("");
                       setPwNew("");
                       setShowPwForm(false);

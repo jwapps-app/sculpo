@@ -28,7 +28,9 @@ async def test_registration_closed_for_unlisted_usernames(client):
 
 async def test_duplicate_registration_rejected(client):
     assert (await client.post("/api/v1/auth/register", json=CREDS)).status_code == 201
-    assert (await client.post("/api/v1/auth/register", json=CREDS)).status_code == 409
+    # 403 rather than 409: a distinct "already taken" would confirm the name
+    # exists, turning registration into a username oracle.
+    assert (await client.post("/api/v1/auth/register", json=CREDS)).status_code == 403
 
 
 async def test_wrong_password_rejected(client):

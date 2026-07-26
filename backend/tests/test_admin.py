@@ -77,7 +77,9 @@ async def test_change_password(client):
         json={"current_password": "pw-for-john-123", "new_password": "brand-new-pass-9"},
         headers=h,
     )
-    assert r.status_code == 204
+    # Returns a replacement session, since the change kills the old ones.
+    assert r.status_code == 200
+    assert r.json()["session_token"]
     assert (
         await client.post(
             "/api/v1/auth/login", json={"username": "john", "password": "pw-for-john-123"}

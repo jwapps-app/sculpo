@@ -31,6 +31,12 @@ class Settings(BaseSettings):
 
     session_ttl_days: int = 90
 
+    # Optional shared secret that must accompany registration of an admin
+    # username. Without it, whoever reaches a public instance first can claim
+    # the admin name and own the instance. Unset = no extra check (fine on a
+    # LAN-only or Access-gated deployment).
+    admin_signup_secret: str = ""
+
     # Hard cap on a stored project's serialized size (imported meshes ride
     # inside the JSON; full-resolution imports can be tens of MB).
     max_project_bytes: int = 50_000_000

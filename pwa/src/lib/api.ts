@@ -110,14 +110,20 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ username, password }),
     }),
-  register: (username: string, password: string) =>
+  register: (username: string, password: string, adminSecret?: string) =>
     request<SessionInfo>("/auth/register", {
       method: "POST",
-      body: JSON.stringify({ username, password }),
+      // admin_secret is only consulted when claiming an ADMIN_USERS name on a
+      // server that requires it; omitted otherwise.
+      body: JSON.stringify(
+        adminSecret ? { username, password, admin_secret: adminSecret } : { username, password },
+      ),
     }),
   me: () => request<UserInfo>("/auth/me"),
+  // Returns a replacement session: changing the password revokes every
+  // existing one, including the caller's.
   changePassword: (currentPassword: string, newPassword: string) =>
-    request<void>("/auth/change-password", {
+    request<SessionInfo>("/auth/change-password", {
       method: "POST",
       body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
     }),

@@ -24,6 +24,9 @@ services:
       DATABASE_URL: postgresql+asyncpg://app:${DB_PASSWORD}@db:5432/app
       SECRET_KEY: ${SECRET_KEY}
       ADMIN_USERS: ${ADMIN_USERS}
+      # Must be supplied when registering an admin username. Without it,
+      # whoever reaches a public instance first can claim the admin name.
+      ADMIN_SIGNUP_SECRET: ${ADMIN_SIGNUP_SECRET:-}
     depends_on:
       db:
         condition: service_healthy

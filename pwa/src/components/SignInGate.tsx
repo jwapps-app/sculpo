@@ -12,6 +12,8 @@ export function SignInGate() {
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [showServer, setShowServer] = useState(false);
+  const [adminSecret, setAdminSecret] = useState("");
+  const [showAdminSecret, setShowAdminSecret] = useState(false);
 
   const canSubmit = username.trim().length >= 3 && password.length >= 8 && !busy;
   // Say WHY the buttons are disabled instead of leaving them mysteriously gray.
@@ -26,7 +28,7 @@ export function SignInGate() {
     setBusy(true);
     setNotice(null);
     try {
-      await authenticate(mode, username.trim(), password);
+      await authenticate(mode, username.trim(), password, adminSecret.trim() || undefined);
     } catch (err) {
       setNotice(err instanceof Error ? err.message : "Sign-in failed.");
     } finally {
@@ -79,6 +81,24 @@ export function SignInGate() {
         >
           Create account
         </button>
+        {showAdminSecret ? (
+          <input
+            type="password"
+            value={adminSecret}
+            onChange={(e) => setAdminSecret(e.target.value)}
+            placeholder="admin setup secret"
+            autoComplete="off"
+            className="w-full rounded border border-neutral-300 px-2 py-1.5 text-sm"
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={() => setShowAdminSecret(true)}
+            className="w-full text-center text-xs text-neutral-500 hover:text-neutral-800"
+          >
+            Setting up the admin account?
+          </button>
+        )}
         {hint && <p className="text-xs text-neutral-500">{hint}</p>}
         {notice && <p className="text-xs text-red-600">{notice}</p>}
         {showServer ? (

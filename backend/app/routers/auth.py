@@ -4,6 +4,7 @@ tokens stored hashed."""
 
 import asyncio
 import re
+import secrets
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -12,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.core.security import hash_password, new_token, verify_password
+from app.core.security import hash_password, needs_rehash, new_token, verify_password
 from app.database import get_db
 from app.deps import get_current_user
 from app.models import AllowedUsername, User, UserSession
@@ -21,6 +22,10 @@ from app.schemas import ChangePasswordIn, CredentialsIn, SessionOut, UserOut
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 USERNAME_RE = re.compile(r"^[a-z0-9_-]{3,32}$")
+
+# One message for every registration refusal, so the endpoint can't be used to
+# discover which usernames are admin names, invited, or already taken.
+_CLOSED = "Registration is not open for this username."
 
 # In-memory brute-force throttle: lock a username out after too many failed
 # logins in a window. Resets on restart — fine at this scale.
@@ -71,18 +76,31 @@ async def register(payload: CredentialsIn, db: AsyncSession = Depends(get_db)) -
     invite = (
         await db.execute(select(AllowedUsername).where(AllowedUsername.username == username))
     ).scalar_one_or_none()
-    if username not in settings.admin_user_set and invite is None:
+    is_admin_name = username in settings.admin_user_set
+    if not is_admin_name and invite is None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Registration is not open for this username.",
+            detail=_CLOSED,
         )
+    # ADMIN_USERS names are guessable (they're just usernames), so on a public
+    # instance a stranger could otherwise claim admin simply by registering
+    # first. When the operator sets a signup secret, prove knowledge of it.
+    if is_admin_name and settings.admin_signup_secret:
+        supplied = payload.admin_secret or ""
+        if not secrets.compare_digest(supplied, settings.admin_signup_secret):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=_CLOSED,
+            )
     existing = (
         await db.execute(select(User).where(User.username == username))
     ).scalar_one_or_none()
     if existing is not None:
+        # Same shape as the closed-registration error: distinguishing "taken"
+        # from "not open" would confirm which usernames exist.
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="That username is already registered.",
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=_CLOSED,
         )
     password_hash = await asyncio.to_thread(hash_password, payload.password)
     user = User(username=username, password_hash=password_hash)
@@ -114,22 +132,42 @@ async def login(payload: CredentialsIn, db: AsyncSession = Depends(get_db)) -> S
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid username or password.",
         )
+    # Migrate pre-upgrade password hashes once their owner proves the password.
+    if needs_rehash(payload.password, user.password_hash):
+        user.password_hash = await asyncio.to_thread(hash_password, payload.password)
+        await db.flush()
     return await _issue_session(db, user)
 
 
-@router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)
+@router.post("/change-password", response_model=SessionOut)
 async def change_password(
     payload: ChangePasswordIn,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-) -> None:
+) -> SessionOut:
+    # Throttle here too: a stolen token could otherwise be used to brute-force
+    # the plaintext password (valuable because people reuse it elsewhere).
+    if _throttled(f"pw:{user.id}"):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many attempts — try again in a few minutes.",
+        )
     ok = await asyncio.to_thread(verify_password, payload.current_password, user.password_hash)
     if not ok:
+        _record_fail(f"pw:{user.id}")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Current password is wrong."
         )
     user.password_hash = await asyncio.to_thread(hash_password, payload.new_password)
+    # Changing a password is how someone locks out a thief, so every other
+    # session must die — otherwise a stolen token stays valid for its full 90
+    # days. The caller gets a fresh token in the response.
+    for session in (
+        await db.execute(select(UserSession).where(UserSession.user_id == user.id))
+    ).scalars():
+        await db.delete(session)
     await db.flush()
+    return await _issue_session(db, user)
 
 
 @router.get("/me", response_model=UserOut)
