@@ -163,3 +163,56 @@ async def test_health_does_not_touch_the_database(client, monkeypatch):
     # Readiness is the one that may check the database.
     with pytest.raises(AssertionError):
         await client.get("/api/v1/health/ready")
+
+
+async def test_project_list_does_not_load_data_blobs(client):
+    """The list returns four scalars per project. Loading whole rows would drag
+    every inline mesh into memory — hundreds of MB for a few-hundred-byte
+    response, and an OOM kill on a memory-capped container."""
+    import tracemalloc
+
+    h = {"Authorization": f"Bearer {await sign_in(client, 'john')}"}
+    big = {"id": "p", "name": "n", "version": 1, "nodes": {}, "rootOrder": [], "blob": "A" * 1_000_000}
+    for i in range(4):
+        assert (
+            await client.post("/api/v1/projects", json={"name": f"p{i}", "data": big}, headers=h)
+        ).status_code == 201
+
+    tracemalloc.start()
+    base = tracemalloc.get_traced_memory()[0]
+    r = await client.get("/api/v1/projects", headers=h)
+    peak = tracemalloc.get_traced_memory()[1]
+    tracemalloc.stop()
+
+    assert r.status_code == 200
+    assert len(r.json()) == 4
+    grew = peak - base
+    # 4MB stored; listing must not allocate anything like that.
+    assert grew < 1_000_000, f"list allocated {grew / 1e6:.1f}MB — is it loading data blobs?"
+
+
+async def test_validation_errors_do_not_echo_the_payload(client):
+    """FastAPI's default handler returns the offending input verbatim, so a
+    malformed multi-MB body comes straight back as a multi-MB response."""
+    h = {"Authorization": f"Bearer {await sign_in(client, 'john')}"}
+    junk = "A" * 200_000
+    r = await client.post("/api/v1/projects", json={"name": "x", "data": junk}, headers=h)
+    assert r.status_code == 422
+    assert len(r.content) < 2_000, f"error response was {len(r.content)} bytes — echoing input?"
+    assert junk not in r.text
+
+
+async def test_oversized_body_refused_before_parsing(client):
+    """Rejected on Content-Length, so an over-cap upload costs almost nothing."""
+    from app.config import settings
+
+    body = "x" * 2_000
+    r = await client.post(
+        "/api/v1/projects",
+        content=body,
+        headers={
+            "Content-Type": "application/json",
+            "Content-Length": str(settings.max_request_bytes + 1),
+        },
+    )
+    assert r.status_code == 413

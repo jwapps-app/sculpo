@@ -40,14 +40,26 @@ async def _owned(db: AsyncSession, user: User, project_id: str) -> Project:
 async def list_projects(
     user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ) -> list[ProjectMetaOut]:
+    # Select only the metadata columns. Loading whole entities would drag every
+    # project's `data` blob into memory (and parse it) just to return four
+    # scalars — with imported meshes stored inline that is hundreds of
+    # megabytes for a response measured in bytes, and an OOM kill on the way.
     rows = (
         await db.execute(
-            select(Project)
+            select(
+                Project.id,
+                Project.name,
+                Project.created_at,
+                Project.updated_at,
+            )
             .where(Project.user_id == user.id)
             .order_by(Project.updated_at.desc())
         )
-    ).scalars()
-    return [ProjectMetaOut.model_validate(p) for p in rows]
+    ).all()
+    return [
+        ProjectMetaOut(id=r.id, name=r.name, created_at=r.created_at, updated_at=r.updated_at)
+        for r in rows
+    ]
 
 
 @router.post("", response_model=ProjectOut, status_code=status.HTTP_201_CREATED)

@@ -1,3 +1,4 @@
+import os
 from functools import lru_cache
 
 from pydantic import AliasChoices, Field
@@ -10,7 +11,13 @@ PACKAGED_APP_ORIGINS = ["app://sculpo"]
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    # Tests must not inherit the developer's .env: a stray value there (an
+    # admin signup secret, say) would otherwise change test outcomes on one
+    # machine and not another.
+    model_config = SettingsConfigDict(
+        env_file=None if os.getenv("SCULPO_TEST") else ".env",
+        extra="ignore",
+    )
 
     app_name: str = "Sculpo"
     environment: str = "production"
@@ -41,6 +48,12 @@ class Settings(BaseSettings):
     # inside the JSON; full-resolution imports can be tens of MB).
     max_project_bytes: int = 50_000_000
     max_projects_per_user: int = 200
+
+    @property
+    def max_request_bytes(self) -> int:
+        """Body ceiling enforced before parsing. Slightly above the project cap
+        to leave room for JSON framing around the scene graph."""
+        return self.max_project_bytes + 2_000_000
 
     @property
     def cors_origins(self) -> list[str]:

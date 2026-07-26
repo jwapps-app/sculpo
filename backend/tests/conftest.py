@@ -1,11 +1,14 @@
 import os
 
 os.environ.update(
+    # Makes Settings ignore the developer's .env so the suite is hermetic.
+    SCULPO_TEST="1",
     ENVIRONMENT="test",
     DEBUG="true",
     DATABASE_URL="sqlite+aiosqlite:///:memory:",
     ADMIN_USERS="john",
     SECRET_KEY="test-secret-key-that-is-long-enough!",
+    ADMIN_SIGNUP_SECRET="",
 )
 
 import pytest

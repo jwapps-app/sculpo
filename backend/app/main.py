@@ -1,7 +1,9 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 from app.config import settings
@@ -17,6 +19,41 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan, docs_url=None, redoc_url=None)
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """Report what was wrong without echoing the payload.
+
+    FastAPI's default handler includes the offending input verbatim, so a
+    malformed 40MB body comes straight back as a 40MB error response — work
+    the size cap never gets to refuse, since validation fails first."""
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={
+            "detail": [
+                {"loc": e.get("loc", []), "msg": e.get("msg", ""), "type": e.get("type", "")}
+                for e in exc.errors()
+            ]
+        },
+    )
+
+@app.middleware("http")
+async def reject_oversized_bodies(request: Request, call_next):
+    """Refuse too-large uploads on Content-Length, before the body is read.
+
+    The per-project cap is also enforced in the router, but only after the
+    whole body has been buffered, parsed into Python objects and validated —
+    peaking at several times the payload size in RAM. Checking the declared
+    length first means an over-cap request costs almost nothing."""
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > settings.max_request_bytes:
+        return JSONResponse(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            content={"detail": "Request too large."},
+        )
+    return await call_next(request)
+
 
 if settings.cors_origins:
     app.add_middleware(
