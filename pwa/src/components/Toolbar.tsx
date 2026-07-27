@@ -29,7 +29,7 @@ import {
   Ungroup as UngroupIcon,
 } from "lucide-react";
 import { APP_NAME } from "../constants/branding";
-import { isCoarsePointer } from "../lib/pointer";
+import { useCoarsePointer } from "../lib/pointer";
 import { AXIS_COLORS } from "../constants/ui";
 import { SNAP_STEPS } from "../lib/units";
 import { useScene, undo, redo } from "../state/store";
@@ -162,7 +162,7 @@ export function Toolbar() {
   // On touch the settings and file groups fold into menus so what is left
   // fits one row — and the dropdowns, cramped down to fit inline, get to be a
   // comfortable size inside the menu.
-  const touch = isCoarsePointer();
+  const touch = useCoarsePointer();
 
   const hasSelection = selection.length > 0;
   const canGroup = selection.length >= 2;

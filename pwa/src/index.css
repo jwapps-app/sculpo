@@ -36,8 +36,12 @@ textarea {
 /* Fingertips need bigger targets than a cursor does. The toolbar's icon
    buttons are ~29px: fine to click, fiddly to tap. On touch the
    Move/Rotate/Scale buttons matter more too, since each mode now shows its
-   own single set of on-shape handles. */
-@media (pointer: coarse) {
+   own single set of on-shape handles.
+   Keyed off the root element rather than @media (pointer: coarse), because an
+   iPad with a mouse attached reports a fine pointer while its screen is still
+   a touchscreen. lib/pointer.ts decides by whichever input was used last and
+   writes the answer here. */
+:root[data-pointer="coarse"] {
   /* At cursor size the toolbar exactly fills an iPad's landscape width, with
      nothing to spare — and portrait is narrower still. Bigger buttons have to
      wrap onto another row, or they shove the rightmost controls off the edge
@@ -52,6 +56,15 @@ textarea {
   header select {
     min-width: 40px;
     min-height: 40px;
+  }
+
+  /* The minimum above makes a box wider than the glyph inside it, and a
+     flex row left-aligns what it cannot fill — which parked every icon-only
+     button's glyph off to one side, most visibly on the dark active ones. */
+  header button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
 
   /* Scale the glyph with its box. Left at 17px the active state reads as a

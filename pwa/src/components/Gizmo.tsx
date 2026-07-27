@@ -7,7 +7,7 @@ import { useScene } from "../state/store";
 import { gizmoState } from "../lib/gizmoState";
 import { sceneApi } from "../lib/sceneApi";
 import { formatLength } from "../lib/units";
-import { isCoarsePointer } from "../lib/pointer";
+import { useCoarsePointer } from "../lib/pointer";
 import type { Vec3 } from "../types/scene";
 
 interface DragState {
@@ -64,6 +64,7 @@ export function Gizmo() {
   const alignMode = useScene((s) => s.alignMode);
   const measureMode = useScene((s) => s.measureMode);
   const setDragInfo = useScene((s) => s.setDragInfo);
+  const coarse = useCoarsePointer();
 
   const pivot = useMemo(() => new THREE.Object3D(), []);
   const controlsRef = useRef<TransformControlsImpl | null>(null);
@@ -108,7 +109,7 @@ export function Gizmo() {
   // never land on two at once: Move = arrows, Rotate = rings, Scale = the
   // resize handles (which beat the scale gizmo here — bigger targets, and
   // they show the dimension you're editing). Desktop keeps both.
-  if (isCoarsePointer() && mode === "scale") return null;
+  if (coarse && mode === "scale") return null;
 
   const collectObjects = () => {
     const out: DragState["objects"] = [];
@@ -250,7 +251,7 @@ export function Gizmo() {
         object={pivot}
         mode={mode}
         // Bigger arrows and rings for fingertips.
-        size={isCoarsePointer() ? 1.5 : 1}
+        size={coarse ? 1.5 : 1}
         translationSnap={snap ? snapStep : null}
         rotationSnap={snap ? THREE.MathUtils.degToRad(15) : null}
         scaleSnap={snap ? 0.1 : null}

@@ -7,7 +7,7 @@ import { sceneApi } from "../lib/sceneApi";
 import { gizmoState } from "../lib/gizmoState";
 import { AXIS_COLORS } from "../constants/ui";
 import { formatLength, fromDisplay } from "../lib/units";
-import { isCoarsePointer } from "../lib/pointer";
+import { isCoarsePointer, useCoarsePointer } from "../lib/pointer";
 import type { Vec3 } from "../types/scene";
 
 interface HandleDef {
@@ -118,7 +118,8 @@ export function ResizeHandles() {
   // fingertip covers both a gizmo arrow and a nearby resize cube, so showing
   // both in Move mode means aiming at "move" and getting "resize". A mouse is
   // precise enough that keeping both available is a convenience, not a hazard.
-  const modeAllows = isCoarsePointer() ? mode === "scale" : mode !== "rotate";
+  const coarse = useCoarsePointer();
+  const modeAllows = coarse ? mode === "scale" : mode !== "rotate";
   const visible =
     ids.length > 0 && modeAllows && !workplaneArmed && !alignMode && !measureMode;
 
