@@ -27,3 +27,16 @@ input,
 textarea {
   user-select: text;
 }
+
+/* Fingertips need bigger targets than a cursor does. The toolbar's icon
+   buttons are ~29px, which is fine to click and fiddly to tap — and on touch
+   the Move/Rotate/Scale buttons carry more weight, since each mode shows its
+   own single set of on-shape handles. Padding only, so the icons and the
+   layout stay put. */
+@media (pointer: coarse) {
+  header button,
+  header select {
+    min-width: 40px;
+    min-height: 40px;
+  }
+}

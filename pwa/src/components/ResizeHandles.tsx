@@ -114,9 +114,13 @@ export function ResizeHandles() {
     [selection, nodes],
   );
   // Align mode shows only the align dots — handles would overlap and steal
-  // their clicks.
+  // their clicks. On touch, restrict the handles to Scale mode as well: a
+  // fingertip covers both a gizmo arrow and a nearby resize cube, so showing
+  // both in Move mode means aiming at "move" and getting "resize". A mouse is
+  // precise enough that keeping both available is a convenience, not a hazard.
+  const modeAllows = isCoarsePointer() ? mode === "scale" : mode !== "rotate";
   const visible =
-    ids.length > 0 && mode !== "rotate" && !workplaneArmed && !alignMode && !measureMode;
+    ids.length > 0 && modeAllows && !workplaneArmed && !alignMode && !measureMode;
 
   const group = useRef<THREE.Group>(null);
   const drag = useRef<DragState | null>(null);
