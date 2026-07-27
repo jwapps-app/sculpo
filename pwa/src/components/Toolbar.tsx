@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { Fragment, useRef, useState } from "react";
 import {
   AlignStartVertical,
   ArrowDownToLine,
@@ -21,6 +21,7 @@ import {
   Ruler,
   Save,
   Scaling,
+  Settings2,
   Trash2,
   Undo2,
   Redo2,
@@ -28,6 +29,7 @@ import {
   Ungroup as UngroupIcon,
 } from "lucide-react";
 import { APP_NAME } from "../constants/branding";
+import { isCoarsePointer } from "../lib/pointer";
 import { AXIS_COLORS } from "../constants/ui";
 import { SNAP_STEPS } from "../lib/units";
 import { useScene, undo, redo } from "../state/store";
@@ -95,13 +97,8 @@ function IconButton({
   );
 }
 
-// `rowBreak` marks the divider the toolbar folds at when it wraps on touch,
-// so the two rows come out evenly filled instead of one full and one nearly
-// empty. It stays an ordinary divider on a cursor, where nothing wraps.
-function Divider({ rowBreak }: { rowBreak?: boolean }) {
-  return (
-    <div className={`mx-1.5 h-5 w-px bg-neutral-200${rowBreak ? " touch-row-break" : ""}`} />
-  );
+function Divider() {
+  return <div className="mx-1.5 h-5 w-px bg-neutral-200" />;
 }
 
 const AXES = ["X", "Y", "Z"] as const;
@@ -160,7 +157,12 @@ export function Toolbar() {
 
   const fileInput = useRef<HTMLInputElement>(null);
   const importInput = useRef<HTMLInputElement>(null);
-  const [menu, setMenu] = useState<"mirror" | "export" | null>(null);
+  const [menu, setMenu] = useState<"mirror" | "export" | "grid" | "file" | null>(null);
+  // A finger needs room a cursor does not, and the toolbar has none to spare.
+  // On touch the settings and file groups fold into menus so what is left
+  // fits one row — and the dropdowns, cramped down to fit inline, get to be a
+  // comfortable size inside the menu.
+  const touch = isCoarsePointer();
 
   const hasSelection = selection.length > 0;
   const canGroup = selection.length >= 2;
@@ -198,10 +200,93 @@ export function Toolbar() {
     }
   };
 
+  const onNewProject = () => {
+    if (
+      useScene.getState().project.rootOrder.length === 0 ||
+      confirm("Start a new project? Unsaved changes will be lost.")
+    ) {
+      newProject();
+    }
+  };
+
+  // Sized for the surface they land on: squeezed onto the bar with a cursor,
+  // full width inside the menu on touch.
+  const selectClass = touch
+    ? "w-full rounded border border-neutral-300 px-2 py-2 text-sm text-neutral-700"
+    : "rounded border border-neutral-300 px-0.5 py-0.5 text-xs text-neutral-600";
+
+  const SETTINGS = [
+    {
+      label: "Snap grid",
+      node: (
+        <select
+          value={snapStep}
+          onChange={(e) => setSnapStep(Number(e.target.value))}
+          title={`Snap grid size (${units})`}
+          className={selectClass}
+        >
+          {SNAP_STEPS[units].map(({ value, label }) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </select>
+      ),
+    },
+    {
+      label: "Units",
+      node: (
+        <select
+          value={units}
+          onChange={(e) => setUnits(e.target.value as "mm" | "in")}
+          title="Measurement units"
+          className={selectClass}
+        >
+          <option value="mm">mm</option>
+          <option value="in">in</option>
+        </select>
+      ),
+    },
+    {
+      label: "Build plate",
+      node: (
+        <select
+          value={bed ? `${bed[0]}x${bed[1]}` : ""}
+          onChange={(e) => {
+            const v = e.target.value;
+            if (!v) return setBed(null);
+            const [w, d] = v.split("x").map(Number);
+            setBed([w, d]);
+          }}
+          title="Build plate — show your printer's footprint"
+          className={selectClass}
+        >
+          <option value="">No plate</option>
+          {BED_PRESETS.map((b) => (
+            <option key={b.label} value={`${b.size[0]}x${b.size[1]}`}>
+              {b.label}
+            </option>
+          ))}
+        </select>
+      ),
+    },
+  ];
+
+  const FILE_ACTIONS = [
+    { icon: FilePlus2, label: "New project", onClick: onNewProject },
+    { icon: FileUp, label: "Import STL / OBJ / SVG", onClick: () => importInput.current?.click() },
+    { icon: FolderOpen, label: "Open project file", onClick: () => fileInput.current?.click() },
+    {
+      icon: Save,
+      label: "Save project as JSON",
+      onClick: () => saveProjectFile(useScene.getState().project),
+    },
+  ];
+
   return (
     <header className="flex items-center gap-0.5 border-b border-neutral-200 bg-white px-3 py-1">
       <img src="/icon.svg" alt="" className="mr-1.5 h-5 w-5 rounded" />
-      <span className="text-sm font-bold">{APP_NAME}</span>
+      {!touch && <span className="text-sm font-bold">{APP_NAME}</span>}
       <input
         key={projectId}
         defaultValue={projectName}
@@ -225,45 +310,32 @@ export function Toolbar() {
       <Divider />
 
       <IconButton icon={Magnet} active={snap} onClick={() => setSnap(!snap)} label="Snap to grid" />
-      <select
-        value={snapStep}
-        onChange={(e) => setSnapStep(Number(e.target.value))}
-        title={`Snap grid size (${units})`}
-        className="rounded border border-neutral-300 px-0.5 py-0.5 text-xs text-neutral-600"
-      >
-        {SNAP_STEPS[units].map(({ value, label }) => (
-          <option key={value} value={value}>
-            {label}
-          </option>
-        ))}
-      </select>
-      <select
-        value={units}
-        onChange={(e) => setUnits(e.target.value as "mm" | "in")}
-        title="Measurement units"
-        className="rounded border border-neutral-300 px-0.5 py-0.5 text-xs text-neutral-600"
-      >
-        <option value="mm">mm</option>
-        <option value="in">in</option>
-      </select>
-      <select
-        value={bed ? `${bed[0]}x${bed[1]}` : ""}
-        onChange={(e) => {
-          const v = e.target.value;
-          if (!v) return setBed(null);
-          const [w, d] = v.split("x").map(Number);
-          setBed([w, d]);
-        }}
-        title="Build plate — show your printer's footprint"
-        className="rounded border border-neutral-300 px-0.5 py-0.5 text-xs text-neutral-600"
-      >
-        <option value="">No plate</option>
-        {BED_PRESETS.map((b) => (
-          <option key={b.label} value={`${b.size[0]}x${b.size[1]}`}>
-            {b.label}
-          </option>
-        ))}
-      </select>
+      {touch ? (
+        <div className="relative">
+          <IconButton
+            icon={Settings2}
+            active={menu === "grid"}
+            onClick={() => setMenu(menu === "grid" ? null : "grid")}
+            label="Grid, units and build plate"
+          />
+          {menu === "grid" && (
+            <Popover onClose={() => setMenu(null)}>
+              <div className="w-60 space-y-3">
+                {SETTINGS.map(({ label, node }) => (
+                  <label key={label} className="block">
+                    <span className="mb-1 block text-xs font-medium text-neutral-500">
+                      {label}
+                    </span>
+                    {node}
+                  </label>
+                ))}
+              </div>
+            </Popover>
+          )}
+        </div>
+      ) : (
+        SETTINGS.map(({ label, node }) => <Fragment key={label}>{node}</Fragment>)
+      )}
 
       <IconButton
         icon={Layers}
@@ -339,7 +411,7 @@ export function Toolbar() {
         )}
       </div>
 
-      <Divider rowBreak />
+      <Divider />
 
       <IconButton
         icon={Copy}
@@ -367,33 +439,39 @@ export function Toolbar() {
           where a greedy spacer would swallow a whole row — see index.css. */}
       <div className="toolbar-gap flex-1" />
 
-      <IconButton
-        icon={FilePlus2}
-        onClick={() => {
-          if (
-            useScene.getState().project.rootOrder.length === 0 ||
-            confirm("Start a new project? Unsaved changes will be lost.")
-          ) {
-            newProject();
-          }
-        }}
-        label="New project"
-      />
-      <IconButton
-        icon={FileUp}
-        onClick={() => importInput.current?.click()}
-        label="Import STL / OBJ / SVG"
-      />
-      <IconButton
-        icon={FolderOpen}
-        onClick={() => fileInput.current?.click()}
-        label="Open project file"
-      />
-      <IconButton
-        icon={Save}
-        onClick={() => saveProjectFile(useScene.getState().project)}
-        label="Save project as JSON"
-      />
+      {touch ? (
+        <div className="relative">
+          <IconButton
+            icon={FolderOpen}
+            active={menu === "file"}
+            onClick={() => setMenu(menu === "file" ? null : "file")}
+            label="Project files"
+          />
+          {menu === "file" && (
+            <Popover onClose={() => setMenu(null)}>
+              <div className="w-56 space-y-1">
+                {FILE_ACTIONS.map(({ icon: Icon, label, onClick }) => (
+                  <button
+                    key={label}
+                    onClick={() => {
+                      setMenu(null);
+                      onClick();
+                    }}
+                    className="flex w-full items-center gap-2 rounded px-2 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100"
+                  >
+                    <Icon size={17} strokeWidth={1.8} />
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </Popover>
+          )}
+        </div>
+      ) : (
+        FILE_ACTIONS.map(({ icon, label, onClick }) => (
+          <IconButton key={label} icon={icon} onClick={onClick} label={label} />
+        ))
+      )}
       <CloudPanel />
       <span className="mx-0.5" />
       <div className="relative">
