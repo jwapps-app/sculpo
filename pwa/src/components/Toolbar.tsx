@@ -95,8 +95,13 @@ function IconButton({
   );
 }
 
-function Divider() {
-  return <div className="mx-1.5 h-5 w-px bg-neutral-200" />;
+// `rowBreak` marks the divider the toolbar folds at when it wraps on touch,
+// so the two rows come out evenly filled instead of one full and one nearly
+// empty. It stays an ordinary divider on a cursor, where nothing wraps.
+function Divider({ rowBreak }: { rowBreak?: boolean }) {
+  return (
+    <div className={`mx-1.5 h-5 w-px bg-neutral-200${rowBreak ? " touch-row-break" : ""}`} />
+  );
 }
 
 const AXES = ["X", "Y", "Z"] as const;
@@ -334,7 +339,7 @@ export function Toolbar() {
         )}
       </div>
 
-      <Divider />
+      <Divider rowBreak />
 
       <IconButton
         icon={Copy}
@@ -358,7 +363,9 @@ export function Toolbar() {
       <IconButton icon={EyeOff} onClick={hideSelected} disabled={!hasSelection} label="Hide selection" />
       <IconButton icon={Eye} onClick={showAll} disabled={!anyHidden} label="Show all hidden objects" />
 
-      <div className="flex-1" />
+      {/* Pushes the file actions to the right edge. On touch the toolbar wraps,
+          where a greedy spacer would swallow a whole row — see index.css. */}
+      <div className="toolbar-gap flex-1" />
 
       <IconButton
         icon={FilePlus2}

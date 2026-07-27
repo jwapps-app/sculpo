@@ -41,10 +41,11 @@ textarea {
   /* At cursor size the toolbar exactly fills an iPad's landscape width, with
      nothing to spare — and portrait is narrower still. Bigger buttons have to
      wrap onto another row, or they shove the rightmost controls off the edge
-     where there is no way to reach them. Vertical space is the one thing
-     there is plenty of. */
+     where there is no way to reach them. Vertical space is the one thing there
+     is plenty of. */
   header {
     flex-wrap: wrap;
+    row-gap: 4px;
   }
 
   header button,
@@ -60,10 +61,31 @@ textarea {
     height: 21px;
   }
 
+  /* The spacer that right-aligns the file actions grows to fill whatever is
+     left of its row. Once the toolbar wraps that is most of a row — the empty
+     trench that made this look broken. Collapse it and let the buttons run on
+     in one continuous flow. */
+  header .toolbar-gap {
+    flex: 0 0 auto;
+    width: 0;
+  }
+
   /* Icon-only buttons explain themselves through hover tooltips, which a
      touchscreen cannot show at all. The transform modes are the ones you have
      to be able to find, so there they say their own name. */
   .touch-label {
     display: inline;
+  }
+}
+
+/* Landscape has the width to fold at a group boundary rather than wherever the
+   row happens to run out, which leaves both rows populated instead of one full
+   and one nearly bare. Portrait is too narrow for that to pay off — folding
+   early there only buys a third row — so it flows continuously instead. */
+@media (pointer: coarse) and (min-width: 1100px) {
+  header .touch-row-break {
+    flex: 0 0 100%;
+    height: 0;
+    margin: 0;
   }
 }
