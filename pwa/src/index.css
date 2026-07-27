@@ -28,15 +28,42 @@ textarea {
   user-select: text;
 }
 
+/* A label that only a touch device shows — see the toolbar rules below. */
+.touch-label {
+  display: none;
+}
+
 /* Fingertips need bigger targets than a cursor does. The toolbar's icon
-   buttons are ~29px, which is fine to click and fiddly to tap — and on touch
-   the Move/Rotate/Scale buttons carry more weight, since each mode shows its
-   own single set of on-shape handles. Padding only, so the icons and the
-   layout stay put. */
+   buttons are ~29px: fine to click, fiddly to tap. On touch the
+   Move/Rotate/Scale buttons matter more too, since each mode now shows its
+   own single set of on-shape handles. */
 @media (pointer: coarse) {
+  /* At cursor size the toolbar exactly fills an iPad's landscape width, with
+     nothing to spare — and portrait is narrower still. Bigger buttons have to
+     wrap onto another row, or they shove the rightmost controls off the edge
+     where there is no way to reach them. Vertical space is the one thing
+     there is plenty of. */
+  header {
+    flex-wrap: wrap;
+  }
+
   header button,
   header select {
     min-width: 40px;
     min-height: 40px;
+  }
+
+  /* Scale the glyph with its box. Left at 17px the active state reads as a
+     large black square with a small icon adrift inside it. */
+  header button svg {
+    width: 21px;
+    height: 21px;
+  }
+
+  /* Icon-only buttons explain themselves through hover tooltips, which a
+     touchscreen cannot show at all. The transform modes are the ones you have
+     to be able to find, so there they say their own name. */
+  .touch-label {
+    display: inline;
   }
 }

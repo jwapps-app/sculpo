@@ -56,26 +56,32 @@ const MODES: { mode: TransformMode; label: string; key: string; icon: typeof Mov
 
 function IconButton({
   label,
+  title,
   onClick,
   icon: Icon,
   active,
   disabled,
   accent,
+  showLabel,
 }: {
   label: string;
+  // Hover text, when it should say more than the label (a shortcut hint).
+  title?: string;
   onClick: () => void;
   icon: typeof Move;
   active?: boolean;
   disabled?: boolean;
   accent?: boolean;
+  // Spell the label out on touch, where there is no hover to reveal it.
+  showLabel?: boolean;
 }) {
   return (
     <button
       onClick={onClick}
-      title={label}
+      title={title ?? label}
       aria-label={label}
       disabled={disabled}
-      className={`rounded-md p-1.5 ${
+      className={`inline-flex items-center gap-1 rounded-md p-1.5 ${
         accent
           ? "bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40"
           : active
@@ -84,6 +90,7 @@ function IconButton({
       }`}
     >
       <Icon size={17} strokeWidth={1.8} />
+      {showLabel && <span className="touch-label text-xs font-medium">{label}</span>}
     </button>
   );
 }
@@ -204,7 +211,9 @@ export function Toolbar() {
           icon={icon}
           active={mode === m}
           onClick={() => setMode(m)}
-          label={`${label} (${key})`}
+          label={label}
+          title={`${label} (${key})`}
+          showLabel
         />
       ))}
 
