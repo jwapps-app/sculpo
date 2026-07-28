@@ -91,6 +91,15 @@ export interface AdminOverview {
   invited: string[];
 }
 
+/** Returned once, when the invite is created. The server only keeps a hash,
+ *  so a lost code cannot be looked up — re-invite to issue a fresh one. */
+export interface InviteCreated {
+  username: string;
+  code: string;
+  expires_at: string;
+  overview: AdminOverview;
+}
+
 export const api = {
   async available(): Promise<boolean> {
     try {
@@ -110,14 +119,22 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ username, password }),
     }),
-  register: (username: string, password: string, adminSecret?: string) =>
+  register: (
+    username: string,
+    password: string,
+    opts: { adminSecret?: string; inviteCode?: string } = {},
+  ) =>
     request<SessionInfo>("/auth/register", {
       method: "POST",
-      // admin_secret is only consulted when claiming an ADMIN_USERS name on a
-      // server that requires it; omitted otherwise.
-      body: JSON.stringify(
-        adminSecret ? { username, password, admin_secret: adminSecret } : { username, password },
-      ),
+      // invite_code is what proves an ordinary registration was invited;
+      // admin_secret is only for claiming an ADMIN_USERS name on a server
+      // that requires it. Each is omitted when empty.
+      body: JSON.stringify({
+        username,
+        password,
+        ...(opts.inviteCode ? { invite_code: opts.inviteCode } : {}),
+        ...(opts.adminSecret ? { admin_secret: opts.adminSecret } : {}),
+      }),
     }),
   me: () => request<UserInfo>("/auth/me"),
   // Returns a replacement session: changing the password revokes every
@@ -129,7 +146,7 @@ export const api = {
     }),
   adminUsers: () => request<AdminOverview>("/admin/users"),
   adminInvite: (username: string) =>
-    request<AdminOverview>("/admin/invites", {
+    request<InviteCreated>("/admin/invites", {
       method: "POST",
       body: JSON.stringify({ username }),
     }),

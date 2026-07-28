@@ -70,9 +70,14 @@ sidecar and expects to sit behind a reverse proxy.
 | `DB_PASSWORD` | yes | Postgres password. |
 | `APP_PORT` | no | Host port, default 8220. |
 
-Accounts are closed by default: admins register themselves, and everyone else
-needs an invite created from the UI. Passwords are bcrypt-hashed, session
-tokens are stored hashed, and every project query is scoped to its owner.
+Accounts are closed by default. Admins register themselves; everyone else
+needs an invite, which an admin creates in the UI and which produces a
+single-use code to pass on. The username alone is not enough to register —
+usernames are guessable, codes are not. Codes are stored hashed, shown once,
+and expire after 14 days (`INVITE_TTL_DAYS`).
+
+Passwords are bcrypt-hashed, session tokens are stored hashed, and every
+project query is scoped to its owner.
 
 ## Architecture
 

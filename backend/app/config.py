@@ -38,6 +38,10 @@ class Settings(BaseSettings):
 
     session_ttl_days: int = 90
 
+    # How long an invite code stays good. Short enough that a code left in an
+    # old chat message stops being a way in.
+    invite_ttl_days: int = 14
+
     # Optional shared secret that must accompany registration of an admin
     # username. Without it, whoever reaches a public instance first can claim
     # the admin name and own the instance. Unset = no extra check (fine on a

@@ -1,6 +1,21 @@
 import { useEffect, useState } from "react";
-import { Cloud, CloudOff, KeyRound, LogOut, Trash2, UserPlus, X } from "lucide-react";
-import { api, setToken, type AdminOverview, type ProjectMeta } from "../lib/api";
+import {
+  ClipboardCopy,
+  Cloud,
+  CloudOff,
+  KeyRound,
+  LogOut,
+  Trash2,
+  UserPlus,
+  X,
+} from "lucide-react";
+import {
+  api,
+  setToken,
+  type AdminOverview,
+  type InviteCreated,
+  type ProjectMeta,
+} from "../lib/api";
 import { useScene } from "../state/store";
 import { useAuth } from "../state/auth";
 import { markSynced, syncNow, useCloudSync } from "../state/cloudSync";
@@ -21,6 +36,8 @@ export function CloudPanel() {
   const [projects, setProjects] = useState<ProjectMeta[] | null>(null);
   const [adminData, setAdminData] = useState<AdminOverview | null>(null);
   const [inviteName, setInviteName] = useState("");
+  // The one and only time this code is visible — the server keeps a hash.
+  const [newInvite, setNewInvite] = useState<InviteCreated | null>(null);
   const [showPwForm, setShowPwForm] = useState(false);
   const [pwCurrent, setPwCurrent] = useState("");
   const [pwNew, setPwNew] = useState("");
@@ -337,7 +354,9 @@ export function CloudPanel() {
                       e.preventDefault();
                       if (inviteName.trim().length >= 3) {
                         run(async () => {
-                          setAdminData(await api.adminInvite(inviteName.trim()));
+                          const created = await api.adminInvite(inviteName.trim());
+                          setAdminData(created.overview);
+                          setNewInvite(created);
                           setInviteName("");
                         });
                       }
@@ -352,12 +371,46 @@ export function CloudPanel() {
                     <button
                       type="submit"
                       disabled={busy || inviteName.trim().length < 3}
-                      title="Invite — they choose their password when they register"
+                      title="Invite — you'll get a code to send them"
                       className="rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 disabled:opacity-40"
                     >
                       <UserPlus size={13} />
                     </button>
                   </form>
+                  {newInvite && (
+                    <div className="space-y-1 rounded border border-blue-200 bg-blue-50 p-2 text-xs">
+                      <p className="text-neutral-700">
+                        Send this code to <strong>{newInvite.username}</strong>. They need it
+                        to create the account — without it the username is not claimable.
+                      </p>
+                      <div className="flex items-center gap-1">
+                        <code className="flex-1 truncate rounded border border-blue-200 bg-white px-1.5 py-1 font-mono text-[11px]">
+                          {newInvite.code}
+                        </code>
+                        <button
+                          type="button"
+                          onClick={() => navigator.clipboard?.writeText(newInvite.code)}
+                          title="Copy code"
+                          className="rounded border border-neutral-300 px-1.5 py-1 hover:bg-white"
+                        >
+                          <ClipboardCopy size={13} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setNewInvite(null)}
+                          title="Dismiss"
+                          className="rounded border border-neutral-300 px-1.5 py-1 hover:bg-white"
+                        >
+                          <X size={13} />
+                        </button>
+                      </div>
+                      <p className="text-neutral-500">
+                        Shown once — only a hash is stored. Expires{" "}
+                        {new Date(newInvite.expires_at).toLocaleDateString()}. Lost it? Invite
+                        again for a fresh code.
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

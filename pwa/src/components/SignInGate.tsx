@@ -14,6 +14,7 @@ export function SignInGate() {
   const [showServer, setShowServer] = useState(false);
   const [adminSecret, setAdminSecret] = useState("");
   const [showAdminSecret, setShowAdminSecret] = useState(false);
+  const [inviteCode, setInviteCode] = useState("");
 
   const canSubmit = username.trim().length >= 3 && password.length >= 8 && !busy;
   // Say WHY the buttons are disabled instead of leaving them mysteriously gray.
@@ -28,7 +29,10 @@ export function SignInGate() {
     setBusy(true);
     setNotice(null);
     try {
-      await authenticate(mode, username.trim(), password, adminSecret.trim() || undefined);
+      await authenticate(mode, username.trim(), password, {
+        adminSecret: adminSecret.trim() || undefined,
+        inviteCode: inviteCode.trim() || undefined,
+      });
     } catch (err) {
       setNotice(err instanceof Error ? err.message : "Sign-in failed.");
     } finally {
@@ -72,11 +76,19 @@ export function SignInGate() {
         >
           Sign in
         </button>
+        <input
+          value={inviteCode}
+          onChange={(e) => setInviteCode(e.target.value)}
+          placeholder="invite code (to create an account)"
+          autoComplete="off"
+          spellCheck={false}
+          className="w-full rounded border border-neutral-300 px-2 py-1.5 text-sm"
+        />
         <button
           type="button"
           onClick={() => submit("register")}
           disabled={!canSubmit}
-          title="For invited usernames: choose your password now"
+          title="Paste the invite code you were sent, pick a password, and this creates your account"
           className="w-full rounded border border-neutral-300 px-2 py-1.5 text-sm hover:bg-neutral-100 disabled:opacity-40"
         >
           Create account

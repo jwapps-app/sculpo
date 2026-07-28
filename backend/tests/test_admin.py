@@ -21,11 +21,13 @@ async def test_invite_flow(client):
     h = await admin_headers(client)
     r = await client.post("/api/v1/admin/invites", json={"username": "friend"}, headers=h)
     assert r.status_code == 201
-    assert "friend" in r.json()["invited"]
+    assert "friend" in r.json()["overview"]["invited"]
+    code = r.json()["code"]
 
     # The invited user registers with their own password; invite is consumed.
     r = await client.post(
-        "/api/v1/auth/register", json={"username": "friend", "password": "friend-pass-1"}
+        "/api/v1/auth/register",
+        json={"username": "friend", "password": "friend-pass-1", "invite_code": code},
     )
     assert r.status_code == 201
     assert r.json()["user"]["is_admin"] is False

@@ -10,6 +10,9 @@ class CredentialsIn(BaseModel):
     # Only consulted when registering an admin username, and only if the
     # server sets ADMIN_SIGNUP_SECRET.
     admin_secret: str | None = Field(default=None, max_length=200)
+    # The code from the invite. Required for every non-admin registration —
+    # the username alone proves nothing about who is registering it.
+    invite_code: str | None = Field(default=None, max_length=200)
 
 
 class UserOut(BaseModel):
@@ -30,6 +33,16 @@ class AllowUserIn(BaseModel):
 class AdminOverviewOut(BaseModel):
     users: list[UserOut]
     invited: list[str]
+
+
+class InviteCreatedOut(BaseModel):
+    """The code is returned once, at creation, and never again — only its hash
+    is stored. If the admin loses it, they revoke and re-invite."""
+
+    username: str
+    code: str
+    expires_at: datetime
+    overview: AdminOverviewOut
 
 
 class SessionOut(BaseModel):

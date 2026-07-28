@@ -61,6 +61,10 @@ async def sign_in(client: AsyncClient, username: str = "john") -> str:
                 headers={"Authorization": f"Bearer {admin}"},
             )
             assert inv.status_code == 201, inv.text
-            r = await client.post("/api/v1/auth/register", json=creds)
+            # An invite is only good with its code — the username alone is not
+            # a credential.
+            r = await client.post(
+                "/api/v1/auth/register", json={**creds, "invite_code": inv.json()["code"]}
+            )
     assert r.status_code in (200, 201), r.text
     return r.json()["session_token"]

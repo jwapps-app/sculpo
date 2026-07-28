@@ -13,7 +13,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.core.security import hash_password, needs_rehash, new_token, verify_password
+from app.core.security import (
+    hash_password,
+    hash_token,
+    needs_rehash,
+    new_token,
+    verify_password,
+)
 from app.database import get_db
 from app.deps import get_current_user
 from app.models import AllowedUsername, User, UserSession
@@ -77,11 +83,21 @@ async def register(payload: CredentialsIn, db: AsyncSession = Depends(get_db)) -
         await db.execute(select(AllowedUsername).where(AllowedUsername.username == username))
     ).scalar_one_or_none()
     is_admin_name = username in settings.admin_user_set
-    if not is_admin_name and invite is None:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=_CLOSED,
-        )
+    if not is_admin_name:
+        # The username is not the credential — anyone can guess "sarah". The
+        # invite code is, so an invite is only good in the hands of whoever
+        # the admin sent it to. Unusable covers both a pre-code invite and an
+        # expired one; both fail closed and need re-issuing.
+        supplied = payload.invite_code or ""
+        if (
+            invite is None
+            or not invite.is_usable()
+            or not secrets.compare_digest(hash_token(supplied), invite.code_hash or "")
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=_CLOSED,
+            )
     # ADMIN_USERS names are guessable (they're just usernames), so on a public
     # instance a stranger could otherwise claim admin simply by registering
     # first. When the operator sets a signup secret, prove knowledge of it.

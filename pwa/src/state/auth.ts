@@ -13,7 +13,7 @@ interface AuthState {
     mode: "login" | "register",
     username: string,
     password: string,
-    adminSecret?: string,
+    secrets?: { adminSecret?: string; inviteCode?: string },
   ) => Promise<void>;
   signOut: () => Promise<void>;
 }
@@ -39,11 +39,11 @@ export const useAuth = create<AuthState>()((set) => ({
     set({ status: "signed-out" });
   },
 
-  authenticate: async (mode, username, password, adminSecret) => {
+  authenticate: async (mode, username, password, secrets) => {
     const session =
       mode === "login"
         ? await api.login(username, password)
-        : await api.register(username, password, adminSecret);
+        : await api.register(username, password, secrets ?? {});
     setToken(session.session_token);
     set({ status: "signed-in", user: session.user });
   },

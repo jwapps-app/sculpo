@@ -1,16 +1,19 @@
 """User management, admins only (ADMIN_USERS env). Invites are usernames that
 may register; the invited person picks their own password when they do."""
 
+from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.core.security import new_token
 from app.database import get_db
 from app.deps import get_current_user
 from app.models import AllowedUsername, User
 from app.routers.auth import USERNAME_RE, user_out
-from app.schemas import AdminOverviewOut, AllowUserIn
+from app.schemas import AdminOverviewOut, AllowUserIn, InviteCreatedOut
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -37,12 +40,12 @@ async def overview(
     )
 
 
-@router.post("/invites", response_model=AdminOverviewOut, status_code=status.HTTP_201_CREATED)
+@router.post("/invites", response_model=InviteCreatedOut, status_code=status.HTTP_201_CREATED)
 async def invite(
     payload: AllowUserIn,
     admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
-) -> AdminOverviewOut:
+) -> InviteCreatedOut:
     username = payload.username.strip().lower()
     if not USERNAME_RE.match(username):
         raise HTTPException(
@@ -56,13 +59,25 @@ async def invite(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="That username is already registered."
         )
+    # Re-inviting an existing name issues a fresh code and invalidates the old
+    # one, which doubles as the way to replace a code the admin has lost.
     exists = (
         await db.execute(select(AllowedUsername).where(AllowedUsername.username == username))
     ).scalar_one_or_none()
+    raw_code, code_hash = new_token()
+    expires_at = datetime.now(timezone.utc) + timedelta(days=settings.invite_ttl_days)
     if exists is None:
-        db.add(AllowedUsername(username=username))
-        await db.flush()
-    return await overview(admin, db)
+        exists = AllowedUsername(username=username)
+        db.add(exists)
+    exists.code_hash = code_hash
+    exists.expires_at = expires_at
+    await db.flush()
+    return InviteCreatedOut(
+        username=username,
+        code=raw_code,
+        expires_at=expires_at,
+        overview=await overview(admin, db),
+    )
 
 
 @router.delete("/invites/{username}", response_model=AdminOverviewOut)

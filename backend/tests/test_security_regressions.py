@@ -216,3 +216,103 @@ async def test_oversized_body_refused_before_parsing(client):
         },
     )
     assert r.status_code == 413
+
+
+async def test_invited_username_cannot_be_claimed_by_a_stranger(client):
+    """The hole this closes: an invite used to be a username on a list, and a
+    username is guessable. Whoever registered "sarah" first got the account,
+    invited or not."""
+    admin = {"Authorization": f"Bearer {await sign_in(client, 'john')}"}
+    created = await client.post("/api/v1/admin/invites", json={"username": "sarah"}, headers=admin)
+    assert created.status_code == 201
+    code = created.json()["code"]
+
+    # A stranger who knows only the username gets nothing.
+    for attempt in (None, "", "guessed-code"):
+        body = {"username": "sarah", "password": "attacker-pw-1"}
+        if attempt is not None:
+            body["invite_code"] = attempt
+        r = await client.post("/api/v1/auth/register", json=body)
+        assert r.status_code == 403, f"invite_code={attempt!r} got in"
+
+    # Sarah, holding the code, registers normally.
+    ok = await client.post(
+        "/api/v1/auth/register",
+        json={"username": "sarah", "password": "sarahs-own-pw-1", "invite_code": code},
+    )
+    assert ok.status_code == 201
+
+
+async def test_invite_code_is_single_use(client):
+    admin = {"Authorization": f"Bearer {await sign_in(client, 'john')}"}
+    code = (
+        await client.post("/api/v1/admin/invites", json={"username": "sarah"}, headers=admin)
+    ).json()["code"]
+    first = await client.post(
+        "/api/v1/auth/register",
+        json={"username": "sarah", "password": "sarahs-own-pw-1", "invite_code": code},
+    )
+    assert first.status_code == 201
+    again = await client.post(
+        "/api/v1/auth/register",
+        json={"username": "sarah", "password": "someone-else-pw", "invite_code": code},
+    )
+    assert again.status_code == 403
+
+
+async def test_invite_code_is_not_stored_in_the_clear(client):
+    """A database copy must not hand over live invites."""
+    from sqlalchemy import select
+
+    from app.database import SessionLocal
+    from app.models import AllowedUsername
+
+    admin = {"Authorization": f"Bearer {await sign_in(client, 'john')}"}
+    code = (
+        await client.post("/api/v1/admin/invites", json={"username": "sarah"}, headers=admin)
+    ).json()["code"]
+
+    async with SessionLocal() as db:
+        row = (await db.execute(select(AllowedUsername))).scalar_one()
+    assert row.code_hash and code not in row.code_hash
+
+
+async def test_expired_invite_is_refused(client):
+    from datetime import datetime, timedelta, timezone
+
+    from sqlalchemy import select
+
+    from app.database import SessionLocal
+    from app.models import AllowedUsername
+
+    admin = {"Authorization": f"Bearer {await sign_in(client, 'john')}"}
+    code = (
+        await client.post("/api/v1/admin/invites", json={"username": "sarah"}, headers=admin)
+    ).json()["code"]
+
+    async with SessionLocal() as db:
+        row = (await db.execute(select(AllowedUsername))).scalar_one()
+        row.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+        await db.commit()
+
+    r = await client.post(
+        "/api/v1/auth/register",
+        json={"username": "sarah", "password": "sarahs-own-pw-1", "invite_code": code},
+    )
+    assert r.status_code == 403
+
+
+async def test_pre_code_invites_fail_closed(client):
+    """Rows that predate the migration have no code, so nothing can prove
+    ownership of them. They must be refused, not treated as open."""
+    from app.database import SessionLocal
+    from app.models import AllowedUsername
+
+    async with SessionLocal() as db:
+        db.add(AllowedUsername(username="legacy"))
+        await db.commit()
+
+    r = await client.post(
+        "/api/v1/auth/register", json={"username": "legacy", "password": "whoever-gets-here"}
+    )
+    assert r.status_code == 403
