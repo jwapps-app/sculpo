@@ -1,8 +1,11 @@
+import logging
 import os
 from functools import lru_cache
 
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_log = logging.getLogger("sculpo.config")
 
 _PLACEHOLDER_SECRETS = {"dev-secret-change-me", "changeme", "secret", ""}
 
@@ -83,6 +86,22 @@ class Settings(BaseSettings):
                 raise RuntimeError(
                     "Refusing to start: ADMIN_USERS is empty — nobody would be able "
                     "to sign in. Set at least one admin username."
+                )
+            # Not fatal: a LAN-only or Access-gated instance is fine without it.
+            # But an empty value looks identical to a set one in a compose file,
+            # and the difference is who owns the instance — so say which it is,
+            # every boot, where it can actually be checked.
+            names = ", ".join(sorted(self.admin_user_set))
+            if self.admin_signup_secret:
+                _log.info(
+                    "ADMIN_SIGNUP_SECRET is set — registering %s requires it.", names
+                )
+            else:
+                _log.warning(
+                    "ADMIN_SIGNUP_SECRET is empty. Anyone who reaches this server "
+                    "and registers %s first becomes an admin. Set it unless this "
+                    "instance is on a trusted network.",
+                    names,
                 )
 
 
