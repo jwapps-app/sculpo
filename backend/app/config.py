@@ -56,6 +56,11 @@ class Settings(BaseSettings):
     max_project_bytes: int = 50_000_000
     max_projects_per_user: int = 200
 
+    # A project thumbnail: a ~320px WebP of the viewport, measured around
+    # 70 KB with the workplane grid in shot. Generous enough for that, tight
+    # enough that the column cannot be used as free storage.
+    max_thumbnail_bytes: int = 200_000
+
     @property
     def max_request_bytes(self) -> int:
         """Body ceiling enforced before parsing. Slightly above the project cap

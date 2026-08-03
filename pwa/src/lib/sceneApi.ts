@@ -38,6 +38,9 @@ export const sceneApi = {
     _clientX: number,
     _clientY: number,
   ): { point: [number, number, number]; snapped: boolean } | null => null,
+  // A picture of the viewport as it stands, for the project library. Returns
+  // a data URL, or null when there is no renderer (no WebGL, no canvas yet).
+  captureThumbnail: (_maxWidth?: number): string | null => null,
 };
 
 declare global {

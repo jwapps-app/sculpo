@@ -1,5 +1,6 @@
 import { create } from "zustand";
-import { api } from "../lib/api";
+import { api, ApiError } from "../lib/api";
+import { sceneApi } from "../lib/sceneApi";
 import { useScene } from "./store";
 import { useAuth } from "./auth";
 import type { Project } from "../types/scene";
@@ -20,6 +21,26 @@ export const useCloudSync = create<CloudSyncState>()(() => ({
 }));
 
 let lastSynced: Project | null = null;
+// A preview costs a render, an encode and an upload, so it does not ride
+// every autosave — those fire ~1.5s after each edit. Once a minute per
+// project keeps the library current without following every nudge.
+const THUMBNAIL_EVERY_MS = 60_000;
+const lastThumbnail = new Map<string, number>();
+
+async function refreshThumbnail(projectId: string) {
+  const last = lastThumbnail.get(projectId) ?? 0;
+  if (Date.now() - last < THUMBNAIL_EVERY_MS) return;
+  const image = sceneApi.captureThumbnail();
+  if (!image) return; // no renderer (no WebGL, or nothing drawn yet)
+  // Claim the slot before awaiting, so a slow upload cannot queue others.
+  lastThumbnail.set(projectId, Date.now());
+  try {
+    await api.putThumbnail(projectId, image);
+  } catch {
+    // A missing preview is cosmetic — never let it fail the save.
+    lastThumbnail.delete(projectId);
+  }
+}
 let timer: ReturnType<typeof setTimeout> | null = null;
 let inFlight = false;
 let queued = false;
@@ -43,13 +64,27 @@ export async function syncNow(): Promise<void> {
   useCloudSync.setState({ status: "saving", detail: null });
   try {
     if (s.cloudProjectId) {
-      await api.updateProject(s.cloudProjectId, project.name, project);
+      try {
+        await api.updateProject(s.cloudProjectId, project.name, project);
+      } catch (err) {
+        // The row is gone — deleted from another device, or the server was
+        // rebuilt. Retrying a dead id would fail forever and quietly stop
+        // saving anyone's work, so adopt a new one instead.
+        if (err instanceof ApiError && err.status === 404) {
+          const meta = await api.createProject(project.name, project);
+          useScene.getState().setCloudProjectId(meta.id);
+        } else {
+          throw err;
+        }
+      }
     } else {
       const meta = await api.createProject(project.name, project);
       useScene.getState().setCloudProjectId(meta.id);
     }
     lastSynced = project;
     useCloudSync.setState({ status: "saved", detail: null });
+    const id = useScene.getState().cloudProjectId;
+    if (id) void refreshThumbnail(id);
   } catch (err) {
     useCloudSync.setState({
       status: "error",

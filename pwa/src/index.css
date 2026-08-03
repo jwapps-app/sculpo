@@ -83,6 +83,12 @@ textarea {
     width: 0;
   }
 
+  /* Controls that a cursor reveals by hovering have to be there all along —
+     a finger cannot hover, so an opacity-0 button is simply missing. */
+  .hover-reveal {
+    opacity: 1;
+  }
+
   /* Icon-only buttons explain themselves through hover tooltips, which a
      touchscreen cannot show at all. The transform modes are the ones you have
      to be able to find, so there they say their own name. */

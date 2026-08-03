@@ -73,6 +73,8 @@ export interface ProjectMeta {
   name: string;
   created_at: string;
   updated_at: string;
+  /** When the preview was last written; null means there isn't one. */
+  thumbnail_at: string | null;
 }
 
 export interface UserInfo {
@@ -144,6 +146,22 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
     }),
+  putThumbnail: (id: string, dataUrl: string) =>
+    request<void>(`/projects/${id}/thumbnail`, {
+      method: "PUT",
+      body: JSON.stringify({ image: dataUrl }),
+    }),
+  // The image endpoint needs the bearer token, which an <img src> cannot
+  // send — so fetch the bytes and hand back a blob the caller turns into an
+  // object URL.
+  fetchThumbnail: async (id: string): Promise<Blob | null> => {
+    const token = getToken();
+    const res = await fetch(`${base()}/projects/${id}/thumbnail`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) return null;
+    return res.blob();
+  },
   adminUsers: () => request<AdminOverview>("/admin/users"),
   adminInvite: (username: string) =>
     request<InviteCreated>("/admin/invites", {

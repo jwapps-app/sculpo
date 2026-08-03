@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   ClipboardCopy,
+  LayoutGrid,
   Cloud,
   CloudOff,
   KeyRound,
@@ -20,6 +21,7 @@ import { useScene } from "../state/store";
 import { useAuth } from "../state/auth";
 import { markSynced, syncNow, useCloudSync } from "../state/cloudSync";
 import { ServerSettings } from "./ServerSettings";
+import { ProjectLibrary } from "./ProjectLibrary";
 
 // Cloud projects for the signed-in user: list/open/save/delete designs on the
 // server; admins manage users here too. Sign-in itself happens at the gate
@@ -38,6 +40,7 @@ export function CloudPanel() {
   const [inviteName, setInviteName] = useState("");
   // The one and only time this code is visible — the server keeps a hash.
   const [newInvite, setNewInvite] = useState<InviteCreated | null>(null);
+  const [libraryOpen, setLibraryOpen] = useState(false);
   const [showPwForm, setShowPwForm] = useState(false);
   const [pwCurrent, setPwCurrent] = useState("");
   const [pwNew, setPwNew] = useState("");
@@ -106,6 +109,21 @@ export function CloudPanel() {
     }
   };
 
+  const openLibrary = () => {
+    setLibraryOpen(true);
+    setOpen(false);
+    void api.listProjects().then(setProjects).catch(() => {});
+  };
+
+  const deleteFromCloud = (id: string) =>
+    run(async () => {
+      const p = projects?.find((x) => x.id === id);
+      if (!confirm(`Delete \u201c${p?.name ?? "this project"}\u201d from the cloud?`)) return;
+      await api.deleteProject(id);
+      if (id === cloudProjectId) setCloudProjectId(null);
+      setProjects(await api.listProjects());
+    });
+
   const openFromCloud = (id: string) =>
     run(async () => {
       const full = await api.getProject(id);
@@ -117,6 +135,19 @@ export function CloudPanel() {
 
   return (
     <div className="relative">
+      {libraryOpen && (
+        <ProjectLibrary
+          projects={projects}
+          currentId={cloudProjectId}
+          busy={busy}
+          onOpen={(id) => {
+            setLibraryOpen(false);
+            openFromCloud(id);
+          }}
+          onDelete={deleteFromCloud}
+          onClose={() => setLibraryOpen(false)}
+        />
+      )}
       <button
         onClick={() => setOpen(!open)}
         title={`Cloud projects (${me.username}) — ${
@@ -255,6 +286,13 @@ export function CloudPanel() {
                   </button>
                 )}
               </div>
+              <button
+                onClick={openLibrary}
+                className="flex w-full items-center justify-center gap-1.5 rounded border border-neutral-300 px-2 py-1.5 text-xs font-medium hover:bg-neutral-100"
+              >
+                <LayoutGrid size={13} />
+                Browse with previews
+              </button>
               <div className="max-h-44 space-y-1 overflow-y-auto">
                 {projects === null ? (
                   <p className="text-xs text-neutral-400">Loading…</p>

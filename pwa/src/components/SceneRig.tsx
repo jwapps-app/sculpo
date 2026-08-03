@@ -58,6 +58,27 @@ export function SceneRig() {
       );
     };
 
+    sceneApi.captureThumbnail = (maxWidth = 320) => {
+      // The drawing buffer is not preserved, so it only holds pixels for the
+      // rest of the frame it was drawn in. Render and read in the same tick.
+      try {
+        gl.render(scene, camera);
+        const src = gl.domElement;
+        if (!src.width || !src.height) return null;
+        const out = document.createElement("canvas");
+        out.width = Math.min(maxWidth, src.width);
+        out.height = Math.max(1, Math.round((out.width * src.height) / src.width));
+        const ctx = out.getContext("2d");
+        if (!ctx) return null;
+        ctx.drawImage(src, 0, 0, out.width, out.height);
+        // WebP where it is supported; browsers that do not fall back to PNG
+        // on their own, which the server also accepts.
+        return out.toDataURL("image/webp", 0.72);
+      } catch {
+        return null;
+      }
+    };
+
     sceneApi.setView = (view) => {
       const distance = camera.position.distanceTo(controls.target);
       camera.position

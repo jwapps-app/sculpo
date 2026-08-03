@@ -56,6 +56,9 @@ class ProjectMetaOut(BaseModel):
     name: str
     created_at: datetime
     updated_at: datetime
+    # When the thumbnail was last written; null means there isn't one. Doubles
+    # as the cache-buster the client puts on the image URL.
+    thumbnail_at: datetime | None = None
 
 
 class ProjectOut(ProjectMetaOut):
@@ -65,3 +68,9 @@ class ProjectOut(ProjectMetaOut):
 class ProjectIn(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     data: dict[str, Any]
+
+
+class ThumbnailIn(BaseModel):
+    """A data URL produced by the client's canvas."""
+
+    image: str = Field(min_length=32, max_length=400_000)
