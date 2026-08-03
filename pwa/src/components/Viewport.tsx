@@ -236,6 +236,51 @@ interface MarqueeRect {
   y2: number;
 }
 
+// three throws outright when it cannot get a WebGL context, which took the
+// whole app down with it. The usual cause is nothing to do with Sculpo: a
+// Chrome GPU process that has fallen over, hardware acceleration switched
+// off, or too many live WebGL tabs at once. Detect it and say so, rather
+// than dying in a render.
+let webglChecked: boolean | null = null;
+function webglAvailable(): boolean {
+  if (webglChecked !== null) return webglChecked;
+  try {
+    const probe = document.createElement("canvas");
+    webglChecked = !!(probe.getContext("webgl2") || probe.getContext("webgl"));
+  } catch {
+    webglChecked = false;
+  }
+  return webglChecked;
+}
+
+function NoWebGL() {
+  return (
+    <div className="flex h-full items-center justify-center bg-neutral-100 p-6">
+      <div className="max-w-md space-y-3 rounded-lg border border-neutral-200 bg-white p-5 text-sm shadow-sm">
+        <h2 className="text-base font-bold">This browser can&rsquo;t start 3D</h2>
+        <p className="text-neutral-600">
+          Sculpo draws with WebGL and the browser refused to create a context. Your
+          saved work is untouched — this is a display problem, not a data one.
+        </p>
+        <ul className="list-disc space-y-1 pl-5 text-neutral-600">
+          <li>Quit the browser fully and reopen it — a crashed GPU process is the
+            most common cause, and it survives a plain reload.</li>
+          <li>Close other heavy 3D/video tabs; browsers cap how many WebGL
+            contexts can be live at once.</li>
+          <li>Check hardware acceleration is on (in Chrome, visit
+            <code className="mx-1 rounded bg-neutral-100 px-1">chrome://gpu</code>).</li>
+        </ul>
+        <button
+          onClick={() => window.location.reload()}
+          className="rounded bg-blue-600 px-3 py-1.5 text-white hover:bg-blue-700"
+        >
+          Try again
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function Viewport() {
   const nodes = useScene((s) => s.project.nodes);
   const rootOrder = useScene((s) => s.project.rootOrder);
@@ -435,6 +480,9 @@ export function Viewport() {
       height: Math.abs(marquee.y2 - marquee.y1),
     };
   }, [marquee]);
+
+  // Below every hook, so the early return cannot change the hook order.
+  if (!webglAvailable()) return <NoWebGL />;
 
   return (
     <div
