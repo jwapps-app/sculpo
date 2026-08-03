@@ -633,6 +633,12 @@ export function Viewport() {
         <ControlsGate />
         <OrbitControls
           makeDefault
+          // Zoom towards whatever is under the pointer rather than towards the
+          // orbit target. Zooming at the centre means every close-up starts
+          // with a scroll and then a pan to put the thing back on screen; this
+          // keeps the point you aimed at where you aimed it, which is what
+          // every other CAD tool does.
+          zoomToCursor
           mouseButtons={{
             LEFT: undefined,
             MIDDLE: THREE.MOUSE.PAN,
