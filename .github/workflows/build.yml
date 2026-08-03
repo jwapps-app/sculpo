@@ -6,7 +6,38 @@ on:
     tags: ["v*"]
 
 jobs:
+  # Nothing reaches the registry until this passes. Images used to publish on
+  # every push with the test suite never run, so a regression shipped as
+  # :latest and was found by whoever redeployed next.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Backend tests
+        working-directory: ./backend
+        run: |
+          pip install -r requirements.txt -r requirements-dev.txt
+          pytest -q
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: pwa/package-lock.json
+      - name: Frontend typecheck, lint and build
+        working-directory: ./pwa
+        run: |
+          npm ci
+          npx tsc -b
+          npm run lint
+          npm run build
+
   build:
+    needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: read

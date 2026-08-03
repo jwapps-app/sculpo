@@ -1,4 +1,12 @@
-import { Component, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  Component,
+  Fragment,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Grid, OrbitControls, OrthographicCamera, PerspectiveCamera } from "@react-three/drei";
 import * as THREE from "three";
@@ -245,22 +253,47 @@ interface MarqueeRect {
 // than useless: a probe canvas holds a context of its own, and browsers cap
 // how many can be live at once, so the check can be what pushes the real
 // renderer over the limit. Let it try, and catch the failure.
-class WebGLBoundary extends Component<{ children: ReactNode }, { failed: boolean; error: Error | null }> {
-  state = { failed: false, error: null as Error | null };
+class WebGLBoundary extends Component<
+  { children: (conservative: boolean) => ReactNode },
+  { error: Error | null; tries: number }
+> {
+  state = { error: null as Error | null, tries: 0 };
 
   static getDerivedStateFromError(error: Error) {
-    return { failed: true, error };
+    return { error };
+  }
+
+  componentDidCatch(error: Error) {
+    // First failure is not necessarily fatal. r3f asks for a
+    // high-performance context by default, and a machine whose discrete GPU
+    // is unavailable or blocklisted can refuse that outright rather than
+    // quietly hand back the integrated one. Ask again, undemandingly.
+    if (this.state.tries === 0 && /webgl/i.test(error.message)) {
+      this.setState({ error: null, tries: 1 });
+    }
   }
 
   render() {
-    const { failed, error } = this.state;
-    if (!failed) return this.props.children;
-    // Only claim "no WebGL" when that is actually what happened; anything
-    // else belongs to the app-level boundary, which reports the real error.
-    if (error && !/webgl/i.test(`${error.message}`)) throw error;
-    return <NoWebGL />;
+    const { error, tries } = this.state;
+    if (error) {
+      // Anything not about WebGL belongs to the app-level boundary, which
+      // reports it accurately instead of blaming the GPU.
+      if (!/webgl/i.test(`${error.message}`)) throw error;
+      if (tries > 0) return <NoWebGL />;
+      return null; // componentDidCatch is about to retry
+    }
+    // The key forces a fresh canvas rather than reusing the failed one.
+    return <Fragment key={tries}>{this.props.children(tries > 0)}</Fragment>;
   }
 }
+
+// Undemanding context settings for the retry: no preference for the discrete
+// GPU, no multisampling, and an explicit willingness to accept a slow one.
+const FALLBACK_GL = {
+  powerPreference: "default" as const,
+  antialias: false,
+  failIfMajorPerformanceCaveat: false,
+};
 
 function NoWebGL() {
   return (
@@ -518,7 +551,9 @@ export function Viewport() {
       }}
     >
       <WebGLBoundary>
+        {(conservative) => (
       <Canvas
+        gl={conservative ? FALLBACK_GL : undefined}
         onPointerMissed={(e) => {
           // Only a plain left-click on the canvas itself deselects. Clicks on
           // DOM overlays (dimension pills etc.) bubble here too — ignore them,
@@ -613,6 +648,7 @@ export function Viewport() {
         />
         <SceneRig />
       </Canvas>
+        )}
       </WebGLBoundary>
       <ViewButtons />
       <DragChip />
