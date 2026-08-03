@@ -19,7 +19,7 @@ import {
 } from "../lib/api";
 import { useScene } from "../state/store";
 import { useAuth } from "../state/auth";
-import { markSynced, syncNow, useCloudSync } from "../state/cloudSync";
+import { captureIfMissing, markSynced, syncNow, useCloudSync } from "../state/cloudSync";
 import { ServerSettings } from "./ServerSettings";
 import { ProjectLibrary } from "./ProjectLibrary";
 
@@ -130,6 +130,8 @@ export function CloudPanel() {
       loadProject(full.data, full.id);
       // Freshly opened = already in sync; don't immediately re-upload it.
       markSynced(useScene.getState().project);
+      // ...but do give it a preview if it never got one.
+      if (!projects?.find((p) => p.id === id)?.thumbnail_at) captureIfMissing(id);
       setOpen(false);
     });
 

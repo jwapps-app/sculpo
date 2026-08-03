@@ -49,6 +49,19 @@ export function markSynced(project: Project) {
   lastSynced = project;
 }
 
+/** Take a preview for a project that has none. Called when one is opened, so
+ *  a library built before previews existed fills in as you visit designs,
+ *  rather than only when you happen to edit one. */
+export function captureIfMissing(projectId: string) {
+  if (lastThumbnail.has(projectId)) return;
+  // Two frames: one for the scene to mount, one for it to have drawn.
+  requestAnimationFrame(() =>
+    requestAnimationFrame(() => {
+      void refreshThumbnail(projectId);
+    }),
+  );
+}
+
 export async function syncNow(): Promise<void> {
   if (useAuth.getState().status !== "signed-in") return;
   const s = useScene.getState();
