@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Component, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Grid, OrbitControls, OrthographicCamera, PerspectiveCamera } from "@react-three/drei";
 import * as THREE from "three";
@@ -241,16 +241,25 @@ interface MarqueeRect {
 // Chrome GPU process that has fallen over, hardware acceleration switched
 // off, or too many live WebGL tabs at once. Detect it and say so, rather
 // than dying in a render.
-let webglChecked: boolean | null = null;
-function webglAvailable(): boolean {
-  if (webglChecked !== null) return webglChecked;
-  try {
-    const probe = document.createElement("canvas");
-    webglChecked = !!(probe.getContext("webgl2") || probe.getContext("webgl"));
-  } catch {
-    webglChecked = false;
+// three only discovers a dead context by trying, and probing first is worse
+// than useless: a probe canvas holds a context of its own, and browsers cap
+// how many can be live at once, so the check can be what pushes the real
+// renderer over the limit. Let it try, and catch the failure.
+class WebGLBoundary extends Component<{ children: ReactNode }, { failed: boolean; error: Error | null }> {
+  state = { failed: false, error: null as Error | null };
+
+  static getDerivedStateFromError(error: Error) {
+    return { failed: true, error };
   }
-  return webglChecked;
+
+  render() {
+    const { failed, error } = this.state;
+    if (!failed) return this.props.children;
+    // Only claim "no WebGL" when that is actually what happened; anything
+    // else belongs to the app-level boundary, which reports the real error.
+    if (error && !/webgl/i.test(`${error.message}`)) throw error;
+    return <NoWebGL />;
+  }
 }
 
 function NoWebGL() {
@@ -481,9 +490,6 @@ export function Viewport() {
     };
   }, [marquee]);
 
-  // Below every hook, so the early return cannot change the hook order.
-  if (!webglAvailable()) return <NoWebGL />;
-
   return (
     <div
       ref={wrapper}
@@ -511,6 +517,7 @@ export function Viewport() {
         sceneApi.dropShape(kind as PrimitiveKind, e.clientX, e.clientY);
       }}
     >
+      <WebGLBoundary>
       <Canvas
         onPointerMissed={(e) => {
           // Only a plain left-click on the canvas itself deselects. Clicks on
@@ -606,6 +613,7 @@ export function Viewport() {
         />
         <SceneRig />
       </Canvas>
+      </WebGLBoundary>
       <ViewButtons />
       <DragChip />
       {marqueeStyle && (
