@@ -78,12 +78,12 @@ export function SceneRig() {
         const fov = 45;
         const cam = new THREE.PerspectiveCamera(fov, width / height, 0.1, 5000);
         cam.up.set(0, 0, 1);
-        // `span` is the bounding-box diagonal, which is longer than anything
-        // actually projects to from this angle, so only a little padding is
-        // needed on top of it. The floor keeps a very small part off the near
-        // plane without shoving it into the distance.
+        // `span` is the bounding-box diagonal. A single tall object can
+        // project to very nearly that, so the padding has to leave real
+        // margin or it touches the frame edges. The floor keeps a very small
+        // part off the near plane without shoving it into the distance.
         const distance =
-          Math.max(span / (2 * Math.tan(THREE.MathUtils.degToRad(fov) / 2)), 8) * 1.05;
+          Math.max(span / (2 * Math.tan(THREE.MathUtils.degToRad(fov) / 2)), 8) * 1.2;
         cam.position
           .copy(center)
           .addScaledVector(VIEW_DIRS.iso.clone().normalize(), distance);

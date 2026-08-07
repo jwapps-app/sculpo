@@ -4,6 +4,11 @@ A browser-based solid modeller for 3D printing. Drag primitives onto a
 workplane, mark them solid or hole, group them to cut one from another, and
 export STL. Tinkercad-shaped, self-hosted, and yours.
 
+<img src="docs/hero.webp" alt="A box with a cylinder subtracted from one corner, rendered isometrically" width="520">
+
+*A box and a cylinder, grouped — the cylinder marked as a hole. Rendered by
+Sculpo's own preview camera.*
+
 **Every bit of geometry runs in your browser.** The server — which is optional
 — stores the scene graph as JSON and never touches a mesh. That is what lets
 the whole thing run on a NAS, and it means the tool keeps working with the
@@ -33,9 +38,15 @@ plate outline for your printer's actual footprint.
 
 **Export.** Binary STL or OBJ, whole scene or selection.
 
+**Find.** A library of your saved designs as a grid of cards, each showing a
+rendered preview of the model rather than a filename. Previews are drawn by
+the browser, isometric and framed to the design.
+
 **Anywhere.** Installable PWA that works offline. Point it at a server and
 projects sync across devices on their own — there is no save button. There is
-also a native iPad app wrapping the same build.
+also a native iPad app wrapping the same build. Desktop and touch are both
+first-class: the interface follows whichever input you last used, so an iPad
+with a mouse attached gets whichever it is being held by.
 
 ## Try it
 
@@ -104,7 +115,11 @@ uvicorn app.main:app --port 8020
 
 ```bash
 cd backend && pytest              # in-memory sqlite, no services needed
+npm run lint --prefix pwa         # oxlint
 ```
+
+CI runs the backend tests, a typecheck, the linter and a production build, and
+only publishes container images if all of them pass.
 
 ## Security
 
