@@ -59,21 +59,112 @@ export function SceneRig() {
     };
 
     sceneApi.captureThumbnail = (maxWidth = 320) => {
-      // The drawing buffer is not preserved, so it only holds pixels for the
-      // rest of the frame it was drawn in. Render and read in the same tick.
+      // A preview should show the design, not wherever the camera happened to
+      // be left. Frame it isometrically and fit it, off-screen: rendering to a
+      // target instead of the visible canvas means the user's own view is
+      // never disturbed, not even for a frame.
       try {
-        gl.render(scene, camera);
-        const src = gl.domElement;
-        if (!src.width || !src.height) return null;
+        const meshes = nodeMeshes();
+        if (meshes.length === 0) return null;
+        const box = new THREE.Box3();
+        for (const o of meshes) box.expandByObject(o);
+        if (box.isEmpty()) return null;
+
+        const width = maxWidth;
+        const height = Math.round((maxWidth * 3) / 4);
+        const center = box.getCenter(new THREE.Vector3());
+        const span = box.getSize(new THREE.Vector3()).length();
+
+        const fov = 45;
+        const cam = new THREE.PerspectiveCamera(fov, width / height, 0.1, 5000);
+        cam.up.set(0, 0, 1);
+        // `span` is the bounding-box diagonal, which is longer than anything
+        // actually projects to from this angle, so only a little padding is
+        // needed on top of it. The floor keeps a very small part off the near
+        // plane without shoving it into the distance.
+        const distance =
+          Math.max(span / (2 * Math.tan(THREE.MathUtils.degToRad(fov) / 2)), 8) * 1.05;
+        cam.position
+          .copy(center)
+          .addScaledVector(VIEW_DIRS.iso.clone().normalize(), distance);
+        cam.lookAt(center);
+        cam.updateProjectionMatrix();
+
+        // Everything that is not the design itself — workplane grid, gizmo,
+        // resize handles, measure overlays — would only be clutter at this
+        // size, so hide it for the one render.
+        const keep = new Set<THREE.Object3D>();
+        for (const m of meshes) {
+          let o: THREE.Object3D | null = m;
+          while (o) {
+            keep.add(o);
+            o = o.parent;
+          }
+        }
+        const hidden: THREE.Object3D[] = [];
+        scene.traverse((o) => {
+          if (o === scene || keep.has(o) || (o as THREE.Light).isLight) return;
+          if (o.visible) {
+            o.visible = false;
+            hidden.push(o);
+          }
+        });
+
+        // Selection is drawn as a blue emissive on the material, so a shape
+        // that happened to be selected would be tinted in its own preview —
+        // a red box comes out magenta. Mute it for the one render.
+        const litUp: { material: THREE.MeshStandardMaterial; intensity: number }[] = [];
+        for (const mesh of meshes) {
+          const material = (mesh as THREE.Mesh).material;
+          for (const one of Array.isArray(material) ? material : [material]) {
+            const std = one as THREE.MeshStandardMaterial;
+            if (std && typeof std.emissiveIntensity === "number" && std.emissiveIntensity !== 0) {
+              litUp.push({ material: std, intensity: std.emissiveIntensity });
+              std.emissiveIntensity = 0;
+            }
+          }
+        }
+
+        const target = new THREE.WebGLRenderTarget(width, height);
+        target.texture.colorSpace = gl.outputColorSpace;
+        const pixels = new Uint8Array(width * height * 4);
+        const previousTarget = gl.getRenderTarget();
+        try {
+          gl.setRenderTarget(target);
+          gl.render(scene, cam);
+          gl.readRenderTargetPixels(target, 0, 0, width, height, pixels);
+        } finally {
+          gl.setRenderTarget(previousTarget);
+          target.dispose();
+          for (const o of hidden) o.visible = true;
+          for (const { material, intensity } of litUp) material.emissiveIntensity = intensity;
+        }
+
+        // WebGL reads bottom-up; canvases are top-down.
+        const flipped = document.createElement("canvas");
+        flipped.width = width;
+        flipped.height = height;
+        const fctx = flipped.getContext("2d");
+        if (!fctx) return null;
+        const image = fctx.createImageData(width, height);
+        const stride = width * 4;
+        for (let y = 0; y < height; y++) {
+          const from = (height - 1 - y) * stride;
+          image.data.set(pixels.subarray(from, from + stride), y * stride);
+        }
+        fctx.putImageData(image, 0, 0);
+
+        // Flatten onto the card's own background so transparency does not
+        // read as a checkerboard wherever it is shown.
         const out = document.createElement("canvas");
-        out.width = Math.min(maxWidth, src.width);
-        out.height = Math.max(1, Math.round((out.width * src.height) / src.width));
-        const ctx = out.getContext("2d");
-        if (!ctx) return null;
-        ctx.drawImage(src, 0, 0, out.width, out.height);
-        // WebP where it is supported; browsers that do not fall back to PNG
-        // on their own, which the server also accepts.
-        return out.toDataURL("image/webp", 0.72);
+        out.width = width;
+        out.height = height;
+        const octx = out.getContext("2d");
+        if (!octx) return null;
+        octx.fillStyle = "#f5f5f5";
+        octx.fillRect(0, 0, width, height);
+        octx.drawImage(flipped, 0, 0);
+        return out.toDataURL("image/webp", 0.8);
       } catch {
         return null;
       }
