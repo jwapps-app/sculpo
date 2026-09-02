@@ -316,3 +316,125 @@ async def test_pre_code_invites_fail_closed(client):
         "/api/v1/auth/register", json={"username": "legacy", "password": "whoever-gets-here"}
     )
     assert r.status_code == 403
+
+
+# ── Second audit (2026-09) ────────────────────────────────────────────────────
+
+
+def test_login_throttle_table_is_bounded():
+    """Keyed by any username a stranger sends; must not grow without limit."""
+    from app.routers import auth as a
+
+    a._FAILS.clear()
+    for i in range(a._MAX_TRACKED * 3):
+        a._record_fail(f"spray-{i}")
+    assert len(a._FAILS) <= a._MAX_TRACKED
+    a._FAILS.clear()
+
+
+def test_login_verifies_with_one_bcrypt(monkeypatch):
+    """Login used to verify, then run a second full bcrypt just to ask whether
+    the hash was legacy-format. That doubled the cost of every login."""
+    import bcrypt as _bcrypt
+
+    from app.core import security
+
+    calls = {"n": 0}
+    real = _bcrypt.checkpw
+
+    def counted(*a, **k):
+        calls["n"] += 1
+        return real(*a, **k)
+
+    monkeypatch.setattr(security.bcrypt, "checkpw", counted)
+    h = security.hash_password("correct-horse-battery")
+    ok, legacy = security.check_password("correct-horse-battery", h)
+    assert ok and not legacy
+    assert calls["n"] == 1
+
+
+async def test_login_purges_that_users_expired_sessions(client):
+    from datetime import datetime, timedelta, timezone
+
+    from sqlalchemy import select
+
+    from app.database import SessionLocal
+    from app.models import User, UserSession
+
+    await sign_in(client, "john")
+    async with SessionLocal() as db:
+        user = (await db.execute(select(User).where(User.username == "john"))).scalar_one()
+        for i in range(2):
+            db.add(
+                UserSession(
+                    user_id=user.id,
+                    token_hash=f"{i:064d}",
+                    expires_at=datetime.now(timezone.utc) - timedelta(days=1),
+                )
+            )
+        await db.commit()
+
+    r = await client.post("/api/v1/auth/login", json={"username": "john", "password": "pw-for-john-123"})
+    assert r.status_code == 200
+
+    async with SessionLocal() as db:
+        rows = (await db.execute(select(UserSession).where(UserSession.user_id == user.id))).scalars().all()
+    assert all(s.expires_at.replace(tzinfo=timezone.utc) > datetime.now(timezone.utc) for s in rows), (
+        "expired sessions survived login"
+    )
+
+
+async def test_saves_do_not_echo_the_project_back(client):
+    """The client holds the data it just sent; returning it doubled the bytes
+    and serialisation time of every save."""
+    h = {"Authorization": f"Bearer {await sign_in(client, 'john')}"}
+    doc = {"id": "p", "name": "n", "version": 1, "nodes": {}, "rootOrder": [], "pad": "x" * 50_000}
+    created = await client.post("/api/v1/projects", json={"name": "p", "data": doc}, headers=h)
+    assert created.status_code == 201
+    assert "data" not in created.json()
+    assert len(created.content) < 1_000
+
+    updated = await client.put(
+        f"/api/v1/projects/{created.json()['id']}", json={"name": "p2", "data": doc}, headers=h
+    )
+    assert updated.status_code == 200
+    assert "data" not in updated.json()
+    # ...but a real read still returns it.
+    got = await client.get(f"/api/v1/projects/{created.json()['id']}", headers=h)
+    assert got.json()["data"] == doc
+
+
+async def test_thumbnail_write_does_not_count_as_an_edit(client):
+    """A preview refresh must not reshuffle the library's last-touched order."""
+    import base64
+
+    h = {"Authorization": f"Bearer {await sign_in(client, 'john')}"}
+    r = await client.post(
+        "/api/v1/projects",
+        json={"name": "p", "data": {"id": "p", "name": "p", "version": 1, "nodes": {}, "rootOrder": []}},
+        headers=h,
+    )
+    pid = r.json()["id"]
+    before = r.json()["updated_at"]
+
+    png = base64.b64encode(
+        bytes.fromhex(
+            "89504e470d0a1a0a0000000d4948445200000001000000010806000000"
+            "1f15c4890000000a49444154789c63000100000500010d0a2db4"
+            "0000000049454e44ae426082"
+        )
+    ).decode()
+    put = await client.put(
+        f"/api/v1/projects/{pid}/thumbnail", json={"image": f"data:image/png;base64,{png}"}, headers=h
+    )
+    assert put.status_code == 204
+
+    from datetime import datetime, timezone
+
+    def instant(iso: str) -> datetime:
+        d = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+        return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+
+    after = (await client.get("/api/v1/projects", headers=h)).json()[0]
+    assert instant(after["updated_at"]) == instant(before)
+    assert after["thumbnail_at"] is not None

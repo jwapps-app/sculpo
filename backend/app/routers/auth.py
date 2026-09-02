@@ -9,14 +9,15 @@ import time
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.core.security import (
+    check_password,
     hash_password,
     hash_token,
-    needs_rehash,
     new_token,
     verify_password,
 )
@@ -38,6 +39,11 @@ _CLOSED = "Registration is not open for this username."
 _FAILS: dict[str, list[float]] = {}
 _MAX_FAILS = 5
 _WINDOW = 15 * 60
+# The table is keyed by whatever username a stranger cares to send, and an
+# entry only gets pruned when that same name is tried again. Left unbounded,
+# a spray of novel usernames grows it without limit — a memory-exhaustion
+# lever on an endpoint that needs no credentials. Cap it.
+_MAX_TRACKED = 10_000
 
 
 def _throttled(username: str) -> bool:
@@ -48,7 +54,16 @@ def _throttled(username: str) -> bool:
 
 
 def _record_fail(username: str) -> None:
-    _FAILS.setdefault(username, []).append(time.time())
+    now = time.time()
+    if username not in _FAILS and len(_FAILS) >= _MAX_TRACKED:
+        # Sweep expired entries; if that is not enough, drop the oldest half.
+        # Losing some throttle state is far cheaper than losing the process.
+        for key in [k for k, hits in _FAILS.items() if not hits or now - hits[-1] >= _WINDOW]:
+            del _FAILS[key]
+        if len(_FAILS) >= _MAX_TRACKED:
+            for key in list(_FAILS)[: _MAX_TRACKED // 2]:
+                del _FAILS[key]
+    _FAILS.setdefault(username, []).append(now)
 
 
 def user_out(user: User) -> UserOut:
@@ -123,7 +138,12 @@ async def register(payload: CredentialsIn, db: AsyncSession = Depends(get_db)) -
     db.add(user)
     if invite is not None:
         await db.delete(invite)  # invite consumed
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError:
+        # Two registrations for the same name raced past the existence check;
+        # the unique constraint caught the loser. Same refusal as "taken".
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=_CLOSED) from None
     return await _issue_session(db, user)
 
 
@@ -139,8 +159,8 @@ async def login(payload: CredentialsIn, db: AsyncSession = Depends(get_db)) -> S
         await db.execute(select(User).where(User.username == username))
     ).scalar_one_or_none()
     # Verify even when the user is missing so timing doesn't reveal usernames.
-    ok = await asyncio.to_thread(
-        verify_password, payload.password, user.password_hash if user else None
+    ok, legacy = await asyncio.to_thread(
+        check_password, payload.password, user.password_hash if user else None
     )
     if not ok or user is None:
         _record_fail(username)
@@ -149,9 +169,20 @@ async def login(payload: CredentialsIn, db: AsyncSession = Depends(get_db)) -> S
             detail="Invalid username or password.",
         )
     # Migrate pre-upgrade password hashes once their owner proves the password.
-    if needs_rehash(payload.password, user.password_hash):
+    # `legacy` came free with the verification; re-checking would cost a
+    # second bcrypt on every login, forever.
+    if legacy:
         user.password_hash = await asyncio.to_thread(hash_password, payload.password)
-        await db.flush()
+    # Every login adds a session row and nothing ever removed the expired
+    # ones, so the table only grew. Clear this user's dead sessions on the way
+    # in: cheap, indexed, and keeps growth bounded by the TTL.
+    await db.execute(
+        delete(UserSession).where(
+            UserSession.user_id == user.id,
+            UserSession.expires_at < datetime.now(timezone.utc),
+        )
+    )
+    await db.flush()
     return await _issue_session(db, user)
 
 

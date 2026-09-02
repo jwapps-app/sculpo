@@ -21,19 +21,28 @@ def hash_password(password: str) -> str:
     return bcrypt.hashpw(_prepare(password), bcrypt.gensalt()).decode()
 
 
-def verify_password(password: str, password_hash: str | None) -> bool:
+def check_password(password: str, password_hash: str | None) -> tuple[bool, bool]:
+    """Returns (ok, legacy). `legacy` is True when the match came from the
+    pre-pre-hashing format, so the caller can migrate the stored hash — without
+    paying for a second bcrypt to find that out."""
     # Always run a real bcrypt comparison, even with no stored hash, so a
     # missing user takes the same time as a wrong password.
     target = password_hash.encode() if password_hash else _DUMMY_HASH
     ok = bcrypt.checkpw(_prepare(password), target)
+    legacy = False
     if not ok and password_hash and _is_legacy_length(password):
         # Accounts created before pre-hashing stored bcrypt(password) directly.
         # Keep them working; login re-hashes them into the new format.
         ok = bcrypt.checkpw(password.encode(), target)
+        legacy = ok
     # An empty/absent hash must never authenticate: without this an empty
     # column value would fall through to the dummy hash and accept its
     # placeholder password.
-    return ok and bool(password_hash)
+    return (ok and bool(password_hash)), legacy
+
+
+def verify_password(password: str, password_hash: str | None) -> bool:
+    return check_password(password, password_hash)[0]
 
 
 def _is_legacy_length(password: str) -> bool:
@@ -41,8 +50,8 @@ def _is_legacy_length(password: str) -> bool:
 
 
 def needs_rehash(password: str, password_hash: str) -> bool:
-    """True when the stored hash is the pre-upgrade format, so the caller can
-    transparently migrate it after a successful login."""
+    """True when the stored hash is the pre-upgrade format. Costs a bcrypt;
+    prefer the `legacy` flag from check_password() when you already verified."""
     return not bcrypt.checkpw(_prepare(password), password_hash.encode())
 
 

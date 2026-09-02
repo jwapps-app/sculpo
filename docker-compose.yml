@@ -23,8 +23,7 @@ services:
       DEBUG: "true"
       DATABASE_URL: postgresql+asyncpg://app:app@db:5432/app
       SECRET_KEY: dev-secret-only-for-local-compose-use!
-      APP_URL: http://localhost:8120
-      ALLOWED_EMAILS: ${ALLOWED_EMAILS:-you@example.com}
+      ADMIN_USERS: ${ADMIN_USERS:-john}
     ports:
       - "8020:8000"
     depends_on:

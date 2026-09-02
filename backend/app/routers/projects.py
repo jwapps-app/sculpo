@@ -1,14 +1,15 @@
 """Project CRUD. Every query is scoped to the signed-in user; a foreign id is
 indistinguishable from a missing one (404), never a 403."""
 
+import asyncio
 import base64
 import binascii
 import json
 import re
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy import func, select
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -20,8 +21,17 @@ from app.schemas import ProjectIn, ProjectMetaOut, ProjectOut, ThumbnailIn
 router = APIRouter(prefix="/projects", tags=["projects"])
 
 
-def _check_size(payload: ProjectIn) -> None:
-    size = len(json.dumps(payload.data, separators=(",", ":")))
+async def _check_size(payload: ProjectIn, request: Request) -> None:
+    # The body contains the data, so the data cannot be larger than the body.
+    # When the declared length is already under the cap there is nothing to
+    # measure — and measuring meant re-serialising the whole scene graph on
+    # the event loop, ~130ms per 20MB, on every save, to learn a number the
+    # request had already told us.
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) <= settings.max_project_bytes:
+        return
+    # Over or unknown: measure precisely, off the loop.
+    size = len(await asyncio.to_thread(json.dumps, payload.data, separators=(",", ":")))
     if size > settings.max_project_bytes:
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
@@ -73,13 +83,17 @@ async def list_projects(
     ]
 
 
-@router.post("", response_model=ProjectOut, status_code=status.HTTP_201_CREATED)
+# Saves answer with metadata only. The client just sent the data, holds it,
+# and never reads it back from the response — echoing it doubled the bytes
+# and the serialisation time of every save for nothing.
+@router.post("", response_model=ProjectMetaOut, status_code=status.HTTP_201_CREATED)
 async def create_project(
     payload: ProjectIn,
+    request: Request,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-) -> ProjectOut:
-    _check_size(payload)
+) -> ProjectMetaOut:
+    await _check_size(payload, request)
     count = (
         await db.execute(select(func.count(Project.id)).where(Project.user_id == user.id))
     ).scalar_one()
@@ -91,7 +105,7 @@ async def create_project(
     project = Project(user_id=user.id, name=payload.name, data=payload.data)
     db.add(project)
     await db.flush()
-    return ProjectOut.model_validate(project)
+    return ProjectMetaOut.model_validate(project)
 
 
 @router.get("/{project_id}", response_model=ProjectOut)
@@ -103,19 +117,20 @@ async def get_project(
     return ProjectOut.model_validate(await _owned(db, user, project_id))
 
 
-@router.put("/{project_id}", response_model=ProjectOut)
+@router.put("/{project_id}", response_model=ProjectMetaOut)
 async def update_project(
     project_id: str,
     payload: ProjectIn,
+    request: Request,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-) -> ProjectOut:
-    _check_size(payload)
+) -> ProjectMetaOut:
+    await _check_size(payload, request)
     project = await _owned(db, user, project_id)
     project.name = payload.name
     project.data = payload.data
     await db.flush()
-    return ProjectOut.model_validate(project)
+    return ProjectMetaOut.model_validate(project)
 
 
 @router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -162,10 +177,19 @@ async def put_thumbnail(
                 f"limit {settings.max_thumbnail_bytes})."
             ),
         )
-    project.thumbnail = raw
-    project.thumbnail_type = f"image/{match.group(1)}"
-    project.thumbnail_at = datetime.now(timezone.utc)
-    await db.flush()
+    # A Core UPDATE with updated_at pinned to its current value: the column's
+    # onupdate would otherwise fire and a preview refresh would count as an
+    # edit, reshuffling the library's "last touched" order for no reason.
+    await db.execute(
+        update(Project)
+        .where(Project.id == project.id)
+        .values(
+            thumbnail=raw,
+            thumbnail_type=f"image/{match.group(1)}",
+            thumbnail_at=datetime.now(timezone.utc),
+            updated_at=project.updated_at,
+        )
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

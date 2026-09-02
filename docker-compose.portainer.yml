@@ -46,10 +46,18 @@ services:
       PGPASSWORD: ${DB_PASSWORD}
     volumes:
       - /volume1/docker/sculpo/backups:/backups
+    # pg_dump runs on its own first so its exit status is what gets checked —
+    # in a pipeline only gzip's would be. A failed dump used to leave an
+    # empty archive behind and then prune the good ones anyway.
     entrypoint: >
       sh -c 'while true; do
-        pg_dump -h db -U app -Fc app | gzip > /backups/app-$$(date +%Y%m%d).dump.gz;
-        find /backups -name "app-*.dump.gz" -mtime +14 -delete;
+        if pg_dump -h db -U app -Fc app > /tmp/dump.tmp; then
+          gzip -c /tmp/dump.tmp > /backups/app-$$(date +%Y%m%d).dump.gz
+            && find /backups -name "app-*.dump.gz" -mtime +14 -delete;
+        else
+          echo "pg_dump failed; keeping existing backups" >&2;
+        fi;
+        rm -f /tmp/dump.tmp;
         sleep 86400;
       done'
     depends_on:
