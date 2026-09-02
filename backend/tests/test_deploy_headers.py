@@ -33,6 +33,14 @@ def test_csp_does_not_allow_plain_eval(csp: str):
     assert "'unsafe-eval'" not in csp.replace("'wasm-unsafe-eval'", "")
 
 
+def test_hsts_is_sent():
+    text = CONF.read_text()
+    assert "Strict-Transport-Security" in text
+    # Not includeSubDomains: this is a subdomain and must not speak for siblings.
+    hsts = next(l for l in text.splitlines() if "Strict-Transport-Security" in l)
+    assert "includeSubDomains" not in hsts
+
+
 def test_csp_keeps_the_protections_that_matter(csp: str):
     for directive in ("default-src 'self'", "object-src 'none'", "frame-ancestors 'none'"):
         assert directive in csp, f"missing {directive}"

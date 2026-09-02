@@ -80,6 +80,7 @@ sidecar and expects to sit behind a reverse proxy.
 | `ADMIN_SIGNUP_SECRET` | strongly advised | Must be presented to register an admin name. Without it, on a reachable instance whoever registers that name first owns the instance. |
 | `DB_PASSWORD` | yes | Postgres password. |
 | `APP_PORT` | no | Host port, default 8220. |
+| `IMAGE_TAG` | no | Defaults to `latest`. Set to a `sha-<commit>` tag to pin a known-good api/web pair. |
 
 Accounts are closed by default. Admins register themselves; everyone else
 needs an invite, which an admin creates in the UI and which produces a
@@ -88,7 +89,16 @@ usernames are guessable, codes are not. Codes are stored hashed, shown once,
 and expire after 14 days (`INVITE_TTL_DAYS`).
 
 Passwords are bcrypt-hashed, session tokens are stored hashed, and every
-project query is scoped to its owner.
+project query is scoped to its owner. Failed logins are throttled per
+username-and-address, so a stranger guessing at your name cannot lock you out.
+
+### Backups
+
+A sidecar takes a nightly `pg_dump` into `/volume1/docker/sculpo/backups` and
+keeps fourteen days. That is the same disk as the database, so it protects
+against a bad migration, not a dead NAS. For an off-site copy, start the stack
+with `COMPOSE_PROFILES=offsite`, set `RCLONE_REMOTE` to any rclone target, and
+put a matching `rclone.conf` in `/volume1/docker/sculpo/rclone/`.
 
 ## Architecture
 

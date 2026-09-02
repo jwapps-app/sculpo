@@ -5,10 +5,9 @@ tokens stored hashed."""
 import asyncio
 import re
 import secrets
-import time
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,8 +20,9 @@ from app.core.security import (
     new_token,
     verify_password,
 )
+from app.core.throttle import record_fail, throttled
 from app.database import get_db
-from app.deps import get_current_user
+from app.deps import client_ip, get_current_user
 from app.models import AllowedUsername, User, UserSession
 from app.schemas import ChangePasswordIn, CredentialsIn, SessionOut, UserOut
 
@@ -34,36 +34,7 @@ USERNAME_RE = re.compile(r"^[a-z0-9_-]{3,32}$")
 # discover which usernames are admin names, invited, or already taken.
 _CLOSED = "Registration is not open for this username."
 
-# In-memory brute-force throttle: lock a username out after too many failed
-# logins in a window. Resets on restart — fine at this scale.
-_FAILS: dict[str, list[float]] = {}
-_MAX_FAILS = 5
-_WINDOW = 15 * 60
-# The table is keyed by whatever username a stranger cares to send, and an
-# entry only gets pruned when that same name is tried again. Left unbounded,
-# a spray of novel usernames grows it without limit — a memory-exhaustion
-# lever on an endpoint that needs no credentials. Cap it.
-_MAX_TRACKED = 10_000
-
-
-def _throttled(username: str) -> bool:
-    now = time.time()
-    recent = [t for t in _FAILS.get(username, []) if now - t < _WINDOW]
-    _FAILS[username] = recent
-    return len(recent) >= _MAX_FAILS
-
-
-def _record_fail(username: str) -> None:
-    now = time.time()
-    if username not in _FAILS and len(_FAILS) >= _MAX_TRACKED:
-        # Sweep expired entries; if that is not enough, drop the oldest half.
-        # Losing some throttle state is far cheaper than losing the process.
-        for key in [k for k, hits in _FAILS.items() if not hits or now - hits[-1] >= _WINDOW]:
-            del _FAILS[key]
-        if len(_FAILS) >= _MAX_TRACKED:
-            for key in list(_FAILS)[: _MAX_TRACKED // 2]:
-                del _FAILS[key]
-    _FAILS.setdefault(username, []).append(now)
+_TOO_MANY = "Too many attempts — try again in a few minutes."
 
 
 def user_out(user: User) -> UserOut:
@@ -148,13 +119,16 @@ async def register(payload: CredentialsIn, db: AsyncSession = Depends(get_db)) -
 
 
 @router.post("/login", response_model=SessionOut)
-async def login(payload: CredentialsIn, db: AsyncSession = Depends(get_db)) -> SessionOut:
+async def login(
+    payload: CredentialsIn, request: Request, db: AsyncSession = Depends(get_db)
+) -> SessionOut:
     username = payload.username.strip().lower()
-    if _throttled(username):
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Too many attempts — try again in a few minutes.",
-        )
+    # Keyed by username AND source address. Keyed by username alone, five bad
+    # guesses from anywhere locked the real owner out for fifteen minutes —
+    # a denial of service that cost the attacker nothing.
+    key = f"{username}|{client_ip(request)}"
+    if await throttled(db, key):
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=_TOO_MANY)
     user = (
         await db.execute(select(User).where(User.username == username))
     ).scalar_one_or_none()
@@ -163,7 +137,7 @@ async def login(payload: CredentialsIn, db: AsyncSession = Depends(get_db)) -> S
         check_password, payload.password, user.password_hash if user else None
     )
     if not ok or user is None:
-        _record_fail(username)
+        await record_fail(key)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid username or password.",
@@ -194,14 +168,11 @@ async def change_password(
 ) -> SessionOut:
     # Throttle here too: a stolen token could otherwise be used to brute-force
     # the plaintext password (valuable because people reuse it elsewhere).
-    if _throttled(f"pw:{user.id}"):
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Too many attempts — try again in a few minutes.",
-        )
+    if await throttled(db, f"pw:{user.id}"):
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=_TOO_MANY)
     ok = await asyncio.to_thread(verify_password, payload.current_password, user.password_hash)
     if not ok:
-        _record_fail(f"pw:{user.id}")
+        await record_fail(f"pw:{user.id}")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Current password is wrong."
         )

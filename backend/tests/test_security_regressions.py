@@ -321,15 +321,85 @@ async def test_pre_code_invites_fail_closed(client):
 # ── Second audit (2026-09) ────────────────────────────────────────────────────
 
 
-def test_login_throttle_table_is_bounded():
-    """Keyed by any username a stranger sends; must not grow without limit."""
-    from app.routers import auth as a
+async def test_login_throttle_table_is_bounded(client):
+    """Keyed by any username a stranger sends; must not grow without limit.
+    Rows outside the window are swept on every insert, so however many novel
+    names get sprayed, the table holds at most one window's worth."""
+    from datetime import datetime, timedelta, timezone
 
-    a._FAILS.clear()
-    for i in range(a._MAX_TRACKED * 3):
-        a._record_fail(f"spray-{i}")
-    assert len(a._FAILS) <= a._MAX_TRACKED
-    a._FAILS.clear()
+    from sqlalchemy import func, select
+
+    from app.core import throttle
+    from app.database import SessionLocal
+    from app.models import LoginFailure
+
+    async with SessionLocal() as db:
+        stale = datetime.now(timezone.utc) - throttle.WINDOW - timedelta(seconds=1)
+        for i in range(500):
+            db.add(LoginFailure(key=f"spray-{i}|1.2.3.4", at=stale))
+        await db.commit()
+
+    await throttle.record_fail("fresh|1.2.3.4")
+
+    async with SessionLocal() as db:
+        n = await db.scalar(select(func.count()).select_from(LoginFailure))
+    assert n == 1, f"{n} rows survived the sweep"
+
+
+async def test_throttle_is_per_address_so_strangers_cannot_lock_you_out(client):
+    """Five bad guesses at your username from one address must not stop you
+    signing in from another."""
+    await client.post("/api/v1/auth/register", json=CREDS)
+    attacker = {"CF-Connecting-IP": "203.0.113.9"}
+    for _ in range(5):
+        await client.post(
+            "/api/v1/auth/login",
+            json={"username": "john", "password": "wrong-pass-1"},
+            headers=attacker,
+        )
+    # The attacker's address is now shut out...
+    r = await client.post("/api/v1/auth/login", json=CREDS, headers=attacker)
+    assert r.status_code == 429
+    # ...and the real owner, elsewhere, is not.
+    r = await client.post(
+        "/api/v1/auth/login", json=CREDS, headers={"CF-Connecting-IP": "198.51.100.7"}
+    )
+    assert r.status_code == 200
+
+
+async def test_throttle_survives_a_rolled_back_request(client):
+    """The failure is recorded even though the request that records it ends
+    in a 401 — which rolls back the request's own session."""
+    from sqlalchemy import func, select
+
+    from app.database import SessionLocal
+    from app.models import LoginFailure
+
+    await client.post("/api/v1/auth/login", json={"username": "ghost", "password": "wrong-pass-1"})
+    async with SessionLocal() as db:
+        n = await db.scalar(select(func.count()).select_from(LoginFailure))
+    assert n == 1
+
+
+async def test_chunked_body_over_the_cap_is_refused(client):
+    """A chunked upload declares no Content-Length, so the up-front check
+    cannot see it. It must be cut off as it streams, not after it is parsed."""
+    from app.config import settings
+
+    async def firehose():
+        chunk = b"x" * 65_536
+        sent = 0
+        while sent <= settings.max_request_bytes + chunk_len:
+            yield chunk
+            sent += len(chunk)
+
+    chunk_len = 65_536
+    r = await client.post(
+        "/api/v1/projects",
+        content=firehose(),
+        headers={"Content-Type": "application/json"},
+    )
+    assert r.status_code == 413
 
 
 def test_login_verifies_with_one_bcrypt(monkeypatch):

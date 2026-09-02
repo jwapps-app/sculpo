@@ -38,21 +38,71 @@ async def validation_error(request: Request, exc: RequestValidationError) -> JSO
         },
     )
 
-@app.middleware("http")
-async def reject_oversized_bodies(request: Request, call_next):
-    """Refuse too-large uploads on Content-Length, before the body is read.
+class BodySizeLimit:
+    """Refuse over-cap uploads before they are buffered, parsed and validated —
+    a path that peaks at several times the payload size in RAM.
 
-    The per-project cap is also enforced in the router, but only after the
-    whole body has been buffered, parsed into Python objects and validated —
-    peaking at several times the payload size in RAM. Checking the declared
-    length first means an over-cap request costs almost nothing."""
-    declared = request.headers.get("content-length")
-    if declared and declared.isdigit() and int(declared) > settings.max_request_bytes:
-        return JSONResponse(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            content={"detail": "Request too large."},
-        )
-    return await call_next(request)
+    A declared Content-Length is checked up front, so an honest over-cap
+    request costs almost nothing. A chunked body declares nothing, so it is
+    counted as it streams and cut off the moment it passes the cap. nginx
+    enforces the same ceiling at the edge; this is what holds if anything
+    ever reaches the app another way.
+
+    The cut-off cannot be an exception: FastAPI turns anything raised while it
+    reads the body into a generic 400. So the 413 is sent from inside
+    `receive` itself — the app is still reading, so nothing has been sent
+    yet — and the app is then told the client went away, which unwinds it
+    cleanly. Whatever it tries to send after that is dropped."""
+
+    def __init__(self, app, max_bytes: int):
+        self.app = app
+        self.max_bytes = max_bytes
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+
+        for name, value in scope.get("headers", []):
+            if name == b"content-length" and value.isdigit() and int(value) > self.max_bytes:
+                return await self._refuse(send)
+
+        seen = 0
+        refused = False
+
+        async def counting_receive():
+            nonlocal seen, refused
+            if refused:
+                return {"type": "http.disconnect"}
+            message = await receive()
+            if message["type"] == "http.request":
+                seen += len(message.get("body", b""))
+                if seen > self.max_bytes:
+                    refused = True
+                    await self._refuse(send)
+                    return {"type": "http.disconnect"}
+            return message
+
+        async def guarded_send(message):
+            if not refused:
+                await send(message)
+
+        await self.app(scope, counting_receive, guarded_send)
+
+    @staticmethod
+    async def _refuse(send):
+        body = b'{"detail":"Request too large."}'
+        await send({
+            "type": "http.response.start",
+            "status": status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            "headers": [
+                (b"content-type", b"application/json"),
+                (b"content-length", str(len(body)).encode()),
+            ],
+        })
+        await send({"type": "http.response.body", "body": body})
+
+
+app.add_middleware(BodySizeLimit, max_bytes=settings.max_request_bytes)
 
 
 if settings.cors_origins:

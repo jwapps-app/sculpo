@@ -26,9 +26,6 @@ def anyio_backend():
 
 @pytest_asyncio.fixture(autouse=True)
 async def _schema():
-    from app.routers.auth import _FAILS
-
-    _FAILS.clear()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield

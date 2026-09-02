@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +10,21 @@ from app.database import get_db
 from app.models import User, UserSession
 
 _bearer = HTTPBearer(auto_error=False)
+
+
+def client_ip(request: Request) -> str:
+    """The address nginx says the request came from. Behind the Cloudflare
+    tunnel that is CF-Connecting-IP; on a plain proxy, the first hop of
+    X-Forwarded-For; otherwise the socket peer. Only meaningful because the
+    app is reachable solely through nginx, which sets these — a client that
+    could talk to :8000 directly could claim any address it liked."""
+    cf = request.headers.get("cf-connecting-ip")
+    if cf:
+        return cf.strip()
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
 
 
 async def get_current_user(

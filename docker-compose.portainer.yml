@@ -17,8 +17,11 @@ services:
       retries: 10
 
   api:
-    image: ${IMAGE_PREFIX:-ghcr.io/jwapps-app/sculpo}-api:latest
-    mem_limit: 512m
+    # IMAGE_TAG defaults to latest; set it to a sha-<commit> tag (CI publishes
+    # one per push) to pin a known-good pair of images.
+    image: ${IMAGE_PREFIX:-ghcr.io/jwapps-app/sculpo}-api:${IMAGE_TAG:-latest}
+    # Two uvicorn workers, each of which buffers a whole project on save.
+    mem_limit: 768m
     environment:
       ENVIRONMENT: production
       DATABASE_URL: postgresql+asyncpg://app:${DB_PASSWORD}@db:5432/app
@@ -32,7 +35,7 @@ services:
         condition: service_healthy
 
   web:
-    image: ${IMAGE_PREFIX:-ghcr.io/jwapps-app/sculpo}-web:latest
+    image: ${IMAGE_PREFIX:-ghcr.io/jwapps-app/sculpo}-web:${IMAGE_TAG:-latest}
     mem_limit: 128m
     ports:
       - "${APP_PORT:-8220}:80"
@@ -63,3 +66,25 @@ services:
     depends_on:
       db:
         condition: service_healthy
+
+  # Off-site copy of the nightly dumps. Opt-in: start the stack with
+  # COMPOSE_PROFILES=offsite and set RCLONE_REMOTE (e.g. "b2:sculpo-backups"),
+  # with an rclone.conf for that remote at /volume1/docker/sculpo/rclone/.
+  # `sync` mirrors the local folder, so the remote keeps the same 14 days.
+  offsite:
+    image: rclone/rclone:1
+    profiles: ["offsite"]
+    mem_limit: 128m
+    environment:
+      RCLONE_REMOTE: ${RCLONE_REMOTE:-}
+    volumes:
+      - /volume1/docker/sculpo/backups:/backups:ro
+      - /volume1/docker/sculpo/rclone:/config/rclone:ro
+    entrypoint: >
+      sh -c 'if [ -z "$$RCLONE_REMOTE" ]; then
+        echo "RCLONE_REMOTE is not set; nothing to sync to" >&2; exit 1; fi;
+      while true; do
+        rclone sync /backups "$$RCLONE_REMOTE" --config /config/rclone/rclone.conf
+          || echo "off-site sync failed" >&2;
+        sleep 86400;
+      done'
