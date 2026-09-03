@@ -3,6 +3,7 @@ import { useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import { sceneApi, type ViewName } from "../lib/sceneApi";
+import type { Vec3 } from "../types/scene";
 import { workplaneMatrix, workplanePlane, workplaneNormal } from "../lib/workplane";
 import { placementState } from "../lib/placement";
 import { footprint, type Footprint } from "../lib/primitives";
@@ -258,6 +259,39 @@ export function SceneRig() {
       });
     };
 
+    sceneApi.scaleNodesAbout = (ids, [sx, sy, sz], [ax, ay, az]) => {
+      const delta = new THREE.Matrix4()
+        .makeTranslation(ax, ay, az)
+        .multiply(new THREE.Matrix4().makeScale(sx, sy, sz))
+        .multiply(new THREE.Matrix4().makeTranslation(-ax, -ay, -az));
+      const entries: { id: string; position: Vec3; rotation: Vec3; scale: Vec3 }[] = [];
+      const m = new THREE.Matrix4();
+      const pos = new THREE.Vector3();
+      const quat = new THREE.Quaternion();
+      const scl = new THREE.Vector3();
+      for (const id of ids) {
+        const obj = findNodeObject(id);
+        if (!obj) continue;
+        obj.updateWorldMatrix(true, false);
+        // World-space delta applied to the world matrix, then expressed back
+        // in the parent's frame — non-identity while editing inside a group.
+        m.copy(delta).multiply(obj.matrixWorld);
+        if (obj.parent) {
+          obj.parent.updateWorldMatrix(true, false);
+          m.premultiply(obj.parent.matrixWorld.clone().invert());
+        }
+        m.decompose(pos, quat, scl);
+        const rot = new THREE.Euler().setFromQuaternion(quat);
+        entries.push({
+          id,
+          position: pos.toArray() as Vec3,
+          rotation: [rot.x, rot.y, rot.z],
+          scale: scl.toArray() as Vec3,
+        });
+      }
+      if (entries.length) useScene.getState().setTransforms(entries);
+    };
+
     sceneApi.getNodeBounds = (id) => {
       const o = findNodeObject(id);
       if (!o) return null;
@@ -498,6 +532,7 @@ export function SceneRig() {
       sceneApi.orbitBy = () => {};
       sceneApi.dropShape = () => {};
       sceneApi.getNodeBounds = () => null;
+      sceneApi.scaleNodesAbout = () => {};
       sceneApi.hitTestNodes = () => false;
       sceneApi.pickInRect = () => [];
       sceneApi.hitNodeAt = () => null;

@@ -1,5 +1,8 @@
+import { useEffect, useState } from "react";
 import * as THREE from "three";
+import { Link2, Unlink2 } from "lucide-react";
 import { AXIS_COLORS } from "../constants/ui";
+import { sceneApi } from "../lib/sceneApi";
 import { FONT_NAMES } from "../lib/primitives";
 import {
   COUNT_PARAMS,
@@ -82,6 +85,179 @@ function VecFields({
         />
       ))}
     </div>
+  );
+}
+
+const SIZE_LOCK_KEY = "size-lock-proportions";
+
+/**
+ * Overall size of the selection — width, depth, height in the current units,
+ * read from the live world bounds, so it works the same for a primitive, a
+ * group, an import, or several things at once. Typing a new value scales the
+ * selection to hit it; with proportions locked (the default) the other two
+ * follow, so "make it 37 wide" keeps a complex part's shape.
+ *
+ * Scales about the bottom-centre of the bounds: the part stays centred where
+ * it was and keeps its feet on the workplane, which is what you want for a
+ * thing that is going to be printed.
+ */
+function SizeFields({ ids, units }: { ids: string[]; units: Units }) {
+  const nodes = useScene((s) => s.project.nodes);
+  const [dims, setDims] = useState<Vec3 | null>(null);
+  const [locked, setLocked] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(SIZE_LOCK_KEY) !== "off";
+    } catch {
+      return true;
+    }
+  });
+
+  // A stable identity for the selection: the caller passes a fresh array
+  // each render, and depending on it directly made the effect re-run on
+  // every re-render for no reason.
+  const key = ids.join("|");
+
+  // Bounds come from the rendered scene, which lives in a separate React
+  // root and may commit after this one. Measure now, and again on the next
+  // macrotask, by which point both roots have flushed. A timeout rather than
+  // an animation frame: frames stop entirely in a background tab, and a
+  // measurement that silently never happens is worse than one a tick late.
+  useEffect(() => {
+    let alive = true;
+    const measure = () => {
+      if (!alive) return;
+      const box = new THREE.Box3();
+      let any = false;
+      for (const id of key.split("|")) {
+        const b = sceneApi.getNodeBounds(id);
+        if (b && !b.isEmpty()) {
+          box.union(b);
+          any = true;
+        }
+      }
+      setDims(any ? (box.getSize(new THREE.Vector3()).toArray() as Vec3) : null);
+    };
+    measure();
+    const later = setTimeout(measure, 0);
+    return () => {
+      alive = false;
+      clearTimeout(later);
+    };
+  }, [key, nodes]);
+
+  const toggleLock = () => {
+    const next = !locked;
+    setLocked(next);
+    try {
+      localStorage.setItem(SIZE_LOCK_KEY, next ? "on" : "off");
+    } catch {
+      /* private mode etc. — the toggle still works for this session */
+    }
+  };
+
+  const resize = (axis: 0 | 1 | 2, displayValue: number) => {
+    // Measure at commit time rather than trusting state: the factor is a
+    // ratio against the *current* size, and a stale reading compounds.
+    const box = new THREE.Box3();
+    for (const id of ids) {
+      const b = sceneApi.getNodeBounds(id);
+      if (b && !b.isEmpty()) box.union(b);
+    }
+    if (box.isEmpty()) return;
+    const current = box.getSize(new THREE.Vector3()).getComponent(axis);
+    const targetMm = mmFromDisplay(displayValue, units);
+    if (!(targetMm > 0) || !(current > 0)) return;
+    const f = targetMm / current;
+    const factors: Vec3 = locked ? [f, f, f] : [1, 1, 1];
+    if (!locked) factors[axis] = f;
+    // Anchor: bottom-centre of the current bounds.
+    const c = box.getCenter(new THREE.Vector3());
+    sceneApi.scaleNodesAbout(ids, factors, [c.x, c.y, box.min.z]);
+  };
+
+  return (
+    <div className="space-y-1" data-dims={dims ? dims.map((v) => v.toFixed(3)).join(",") : ""}>
+      <div className="flex items-center justify-between">
+        <div className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+          Size ({units})
+        </div>
+        <button
+          onClick={toggleLock}
+          title={
+            locked
+              ? "Proportions locked — changing one dimension scales the others to match"
+              : "Proportions unlocked — each dimension changes on its own"
+          }
+          aria-pressed={locked}
+          className={`rounded p-1 ${
+            locked ? "bg-neutral-800 text-white" : "text-neutral-500 hover:bg-neutral-100"
+          }`}
+        >
+          {locked ? <Link2 size={13} /> : <Unlink2 size={13} />}
+        </button>
+      </div>
+      {(["W", "D", "H"] as const).map((label, i) => (
+        <DraftNumberField
+          key={`${label}:${key}`}
+          label={label}
+          labelColor={AXIS_COLORS[i]}
+          step={units === "in" ? 0.125 : 1}
+          value={dims ? mmToDisplay(dims[i], units) : 0}
+          onCommit={(v) => resize(i as 0 | 1 | 2, v)}
+        />
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Like NumberField, but commits on Enter or blur rather than every keystroke.
+ * A size is a ratio against the current size, so committing "2" on the way
+ * to "25" would scale the part to 2mm and then 12.5x back up — each step a
+ * fresh measurement, each one wrong.
+ */
+function DraftNumberField({
+  label,
+  value,
+  onCommit,
+  step = 1,
+  labelColor,
+}: {
+  label: string;
+  value: number;
+  onCommit: (v: number) => void;
+  step?: number;
+  labelColor?: string;
+}) {
+  const shown = Number(value.toFixed(3));
+  const [draft, setDraft] = useState<string | null>(null);
+  const commit = () => {
+    if (draft === null) return;
+    const v = Number(draft);
+    setDraft(null);
+    if (Number.isFinite(v) && v !== shown) onCommit(v);
+  };
+  return (
+    <label className="flex items-center justify-between gap-2 text-sm">
+      <span
+        className={`w-5 ${labelColor ? "font-bold" : "text-neutral-500"}`}
+        style={labelColor ? { color: labelColor } : undefined}
+      >
+        {label}
+      </span>
+      <input
+        type="number"
+        step={step}
+        value={draft ?? shown}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+          if (e.key === "Escape") setDraft(null);
+        }}
+        className="w-20 rounded border border-neutral-300 px-1.5 py-0.5 text-right text-sm"
+      />
+    </label>
   );
 }
 
@@ -342,6 +518,7 @@ export function Inspector() {
         <div className="text-sm text-neutral-500">
           {selected.length} objects selected
         </div>
+        <SizeFields ids={selection} units={units} />
         <AlignPanel />
         <FlipRow />
         <LockHideRow />
@@ -384,6 +561,7 @@ export function Inspector() {
           fromDisplay={(v) => mmFromDisplay(v, units)}
           onCommit={(v) => setTransform(group.id, v, group.rotation, group.scale)}
         />
+        <SizeFields ids={[group.id]} units={units} />
         <RotateControl />
         <VecFields
           title="Scale"
@@ -441,6 +619,7 @@ export function Inspector() {
         fromDisplay={(v) => mmFromDisplay(v, units)}
         onCommit={(v) => updateShape(node.id, { position: v })}
       />
+      <SizeFields ids={[node.id]} units={units} />
       <RotateControl />
       <VecFields
         title="Scale"

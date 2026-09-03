@@ -38,6 +38,10 @@ export const sceneApi = {
     _clientX: number,
     _clientY: number,
   ): { point: [number, number, number]; snapped: boolean } | null => null,
+  // Scale the given nodes by per-axis factors about a world-space anchor,
+  // and commit the result to the store as one undo step. This is the same
+  // operation the corner resize handles perform, exposed for typed input.
+  scaleNodesAbout: (_ids: string[], _factors: [number, number, number], _anchor: [number, number, number]): void => {},
   // A picture of the viewport as it stands, for the project library. Returns
   // a data URL, or null when there is no renderer (no WebGL, no canvas yet).
   captureThumbnail: (_maxWidth?: number): string | null => null,
