@@ -4,7 +4,7 @@ import type { GroupNode, Project, ShapeNode } from "../types/scene";
 import { isGroup } from "../types/scene";
 import { buildGeometry } from "./primitives";
 import { bakeTransform, composeMatrix } from "./transform";
-import { cutGroup, manifoldLoaded } from "./manifold";
+import { cutGroup, isClosedSolid, manifoldLoaded, repairExtrusion } from "./manifold";
 
 // Two engines. Manifold (WebAssembly, loaded asynchronously) is the real one:
 // its output is always a closed, consistently oriented skin, which is what a
@@ -95,6 +95,11 @@ export function evaluateGroup(
     } else {
       geo = buildGeometry(child);
       role = child.role;
+      // A glyph or SVG outline that overlaps itself is not a closed solid.
+      // Rebuilt here, in its own flat frame, before the transform bakes in.
+      if (geo && manifoldLoaded() && !isClosedSolid(geo)) {
+        geo = repairExtrusion(geo) ?? geo;
+      }
     }
     if (!geo) continue;
 

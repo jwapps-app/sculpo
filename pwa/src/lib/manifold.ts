@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 import * as THREE from "three";
-import Module, { type Manifold, type ManifoldToplevel } from "manifold-3d";
+import Module, { type CrossSection, type Manifold, type ManifoldToplevel } from "manifold-3d";
 import wasmUrl from "manifold-3d/manifold.wasm?url";
 
 // The boolean engine. Manifold guarantees watertight output: every result is
@@ -121,19 +121,28 @@ export function cutGroup(
   if (!lib) return null;
   const owned: Manifold[] = [];
   try {
+    // Each input is split into its connected pieces first. A shape that is
+    // really two closed shells touching along a face is valid input but not a
+    // valid result; as separate operands the union dissolves the seam.
+    const pieces = (geo: THREE.BufferGeometry): Manifold[] | null => {
+      const m = toManifold(geo);
+      if (!m) return null;
+      owned.push(m);
+      const parts = m.decompose();
+      owned.push(...parts);
+      return parts;
+    };
     const s: Manifold[] = [];
     const h: Manifold[] = [];
     for (const geo of solids) {
-      const m = toManifold(geo);
-      if (!m) return null;
-      owned.push(m);
-      s.push(m);
+      const parts = pieces(geo);
+      if (!parts) return null;
+      s.push(...parts);
     }
     for (const geo of holes) {
-      const m = toManifold(geo);
-      if (!m) return null;
-      owned.push(m);
-      h.push(m);
+      const parts = pieces(geo);
+      if (!parts) return null;
+      h.push(...parts);
     }
     const joined = lib.Manifold.union(s);
     owned.push(joined);
@@ -147,4 +156,114 @@ export function cutGroup(
   } finally {
     for (const m of owned) m.delete();
   }
+}
+
+// Position tolerance for deciding that a vertex sits on an extrusion's top or
+// bottom plane — well under any printable feature, above float noise.
+const LEVEL_EPS = 1e-4;
+
+/**
+ * If every vertex of the geometry lies on one of two z planes — a flat
+ * extrusion like text, a sketch, or an imported SVG — returns those planes.
+ */
+function extrusionLevels(geo: THREE.BufferGeometry): [number, number] | null {
+  const pos = geo.getAttribute("position");
+  if (!pos || pos.count < 6) return null;
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (let i = 0; i < pos.count; i++) {
+    const z = pos.getZ(i);
+    if (z < lo) lo = z;
+    if (z > hi) hi = z;
+  }
+  if (hi - lo < LEVEL_EPS * 10) return null;
+  for (let i = 0; i < pos.count; i++) {
+    const z = pos.getZ(i);
+    if (z - lo > LEVEL_EPS && hi - z > LEVEL_EPS) return null;
+  }
+  return [lo, hi];
+}
+
+/**
+ * Rebuilds a flat extrusion as a closed solid from its own cap triangles.
+ * Font glyphs and SVG paths often carry outlines that overlap or touch
+ * themselves; extruded directly they produce edges shared by four faces,
+ * which no boolean engine or slicer accepts. Unioning the cap triangles in
+ * 2D dissolves the overlaps into one clean outline, and extruding that back
+ * to the same height gives the same shape, watertight. Null if the geometry
+ * is not a flat extrusion or has no area.
+ */
+export function repairExtrusion(geo: THREE.BufferGeometry): THREE.BufferGeometry | null {
+  if (!lib) return null;
+  const levels = extrusionLevels(geo);
+  if (!levels) return null;
+  const [lo, hi] = levels;
+  const pos = geo.getAttribute("position");
+  const index = geo.index;
+  const triCount = index ? index.count / 3 : pos.count / 3;
+  const vert = (t: number, k: number) => (index ? index.getX(t * 3 + k) : t * 3 + k);
+
+  // Every cap triangle, top and bottom, as a counter-clockwise 2D polygon.
+  const polys: [number, number][][] = [];
+  for (let t = 0; t < triCount; t++) {
+    const a = vert(t, 0);
+    const b = vert(t, 1);
+    const c = vert(t, 2);
+    const za = pos.getZ(a);
+    const zb = pos.getZ(b);
+    const zc = pos.getZ(c);
+    const onTop = hi - za < LEVEL_EPS && hi - zb < LEVEL_EPS && hi - zc < LEVEL_EPS;
+    const onBottom = za - lo < LEVEL_EPS && zb - lo < LEVEL_EPS && zc - lo < LEVEL_EPS;
+    if (!onTop && !onBottom) continue;
+    const tri: [number, number][] = [
+      [pos.getX(a), pos.getY(a)],
+      [pos.getX(b), pos.getY(b)],
+      [pos.getX(c), pos.getY(c)],
+    ];
+    const area2 =
+      (tri[1][0] - tri[0][0]) * (tri[2][1] - tri[0][1]) -
+      (tri[2][0] - tri[0][0]) * (tri[1][1] - tri[0][1]);
+    if (Math.abs(area2) < 1e-10) continue;
+    if (area2 < 0) tri.reverse();
+    polys.push(tri);
+  }
+  if (!polys.length) return null;
+
+  let outline: CrossSection | null = null;
+  let solid: Manifold | null = null;
+  let placed: Manifold | null = null;
+  try {
+    outline = new lib.CrossSection(polys, "NonZero");
+    if (outline.isEmpty()) return null;
+    solid = lib.Manifold.extrude(outline, hi - lo);
+    placed = solid.translate([0, 0, lo]);
+    if (placed.status() !== "NoError" || placed.isEmpty()) return null;
+    return fromManifold(placed);
+  } catch (err) {
+    console.warn("Could not rebuild extrusion", err);
+    return null;
+  } finally {
+    outline?.delete();
+    solid?.delete();
+    placed?.delete();
+  }
+}
+
+/** True if Manifold accepts the geometry as a closed, oriented solid. */
+export function isClosedSolid(geo: THREE.BufferGeometry): boolean {
+  const probe = toManifold(geo);
+  if (!probe) return false;
+  probe.delete();
+  return true;
+}
+
+/**
+ * The geometry as one clean solid, for exporting a shape on its own: a
+ * closed mesh is passed through the engine so touching or nested pieces
+ * are unioned into a single skin; a flat extrusion whose outline crosses
+ * itself is rebuilt; anything else comes back unchanged.
+ */
+export function asClosedSolid(geo: THREE.BufferGeometry): THREE.BufferGeometry {
+  if (!lib) return geo;
+  return cutGroup([geo], []) ?? repairExtrusion(geo) ?? geo;
 }

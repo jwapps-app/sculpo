@@ -5,6 +5,7 @@ import type { Project } from "../types/scene";
 import { isGroup } from "../types/scene";
 import { buildGeometry } from "./primitives";
 import { evaluateGroup } from "./csg";
+import { asClosedSolid, manifoldLoaded } from "./manifold";
 import { downloadBlob, safeFilename } from "./download";
 
 export type ExportFormat = "stl" | "obj";
@@ -45,6 +46,8 @@ export function exportSceneStl(project: Project, options: ExportOptions = {}): E
       continue;
     } else {
       geometry = buildGeometry(node);
+      // Lone text and SVG shapes get the same outline repair groups do.
+      if (geometry && manifoldLoaded()) geometry = asClosedSolid(geometry);
     }
     if (!geometry || !geometry.getAttribute("position")?.count) continue;
 
