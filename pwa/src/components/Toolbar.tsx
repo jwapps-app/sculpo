@@ -285,8 +285,17 @@ export function Toolbar() {
 
   return (
     <header className="flex items-center gap-0.5 border-b border-neutral-200 bg-white px-3 py-1">
-      <img src="/icon.svg" alt="" className="mr-1.5 h-5 w-5 rounded" />
-      {!touch && <span className="text-sm font-bold">{APP_NAME}</span>}
+      <img
+        src="/icon.svg"
+        alt=""
+        title={`${APP_NAME} build ${__BUILD_ID__}`}
+        className="mr-1.5 h-5 w-5 rounded"
+      />
+      {!touch && (
+        <span className="text-sm font-bold" title={`Build ${__BUILD_ID__}`}>
+          {APP_NAME}
+        </span>
+      )}
       <input
         key={projectId}
         defaultValue={projectName}

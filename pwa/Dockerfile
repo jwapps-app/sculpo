@@ -4,6 +4,9 @@ WORKDIR /build
 COPY pwa/package.json pwa/package-lock.json ./
 RUN npm ci
 COPY pwa .
+# The commit being built, shown in the app so a deployment can be checked.
+ARG BUILD_ID=unknown
+ENV BUILD_ID=$BUILD_ID
 RUN npm run build
 
 FROM nginx:1.27-alpine

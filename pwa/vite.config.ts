@@ -1,10 +1,28 @@
+import { execSync } from "node:child_process";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { VitePWA } from "vite-plugin-pwa";
 import { APP_NAME, APP_TAGLINE } from "./src/constants/branding.ts";
 
+// Stamped into the bundle so a running instance can say which commit it is.
+// CI passes BUILD_ID; a local build asks git; anything else is "dev".
+function buildId(): string {
+  const fromEnv = process.env.BUILD_ID?.trim();
+  if (fromEnv) return fromEnv.slice(0, 7);
+  try {
+    return execSync("git rev-parse --short HEAD", { stdio: ["ignore", "pipe", "ignore"] })
+      .toString()
+      .trim();
+  } catch {
+    return "dev";
+  }
+}
+
 export default defineConfig({
+  define: {
+    __BUILD_ID__: JSON.stringify(buildId()),
+  },
   server: {
     proxy: {
       "/api": "http://localhost:8020",
