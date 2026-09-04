@@ -1,7 +1,7 @@
 # Sculpo — web app
 
 The modeller itself: Vite + React + TypeScript, three.js through
-@react-three/fiber, CSG via three-bvh-csg, state in zustand with undo via
+@react-three/fiber, booleans via Manifold (WebAssembly), state in zustand with undo via
 zundo.
 
 ```bash

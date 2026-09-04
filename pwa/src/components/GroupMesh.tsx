@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import * as THREE from "three";
 import type { GroupNode } from "../types/scene";
 import { evaluateGroup, firstSolidColor, subtreeSignature } from "../lib/csg";
+import { useManifoldLoaded } from "../lib/manifold";
 import { useScene } from "../state/store";
 import { handleMeshClick, MeshEdges } from "./ShapeMesh";
 
@@ -11,12 +12,14 @@ export function GroupMesh({ node, dimmed = false }: { node: GroupNode; dimmed?: 
   const nodes = useScene((s) => s.project.nodes);
   const setEditingGroup = useScene((s) => s.setEditingGroup);
   const isTopLevel = useScene((s) => s.project.rootOrder.includes(node.id));
+  // Groups cut before the boolean engine finished loading get cut again by it.
+  const engineReady = useManifoldLoaded();
 
   // Re-runs only when a descendant changes, not when the group moves.
   const geometry = useMemo(
     () => evaluateGroup(node, nodes),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [signature],
+    [signature, engineReady],
   );
   const inherited = useMemo(
     () => firstSolidColor(node, nodes),

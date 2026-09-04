@@ -4,12 +4,18 @@ import type { GroupNode, Project, ShapeNode } from "../types/scene";
 import { isGroup } from "../types/scene";
 import { buildGeometry } from "./primitives";
 import { bakeTransform, composeMatrix } from "./transform";
+import { cutGroup, manifoldLoaded } from "./manifold";
 
+// Two engines. Manifold (WebAssembly, loaded asynchronously) is the real one:
+// its output is always a closed, consistently oriented skin, which is what a
+// slicer needs. three-bvh-csg covers two cases Manifold cannot — inputs that
+// are not themselves closed solids (a scanned mesh with holes, a font glyph
+// whose outline crosses itself), and the moment before the WASM arrives.
 const evaluator = new Evaluator();
 evaluator.attributes = ["position", "normal"];
 
-// Booleans on real-world meshes leave two kinds of trash in their output:
-// stale vertices beyond drawRange (three-bvh-csg reuses oversized buffers)
+// three-bvh-csg leaves two kinds of trash in its output:
+// stale vertices beyond drawRange (it reuses oversized buffers)
 // and degenerate sliver triangles along cut planes — invisible, but they
 // stretch the bounding box, so drop-to-workplane, align, measure, and
 // placement all see a phantom extent where removed material used to be.
@@ -74,8 +80,8 @@ export function evaluateGroup(
   group: GroupNode,
   nodes: Project["nodes"],
 ): THREE.BufferGeometry | null {
-  let solid: Brush | null = null;
-  const holes: Brush[] = [];
+  const solids: THREE.BufferGeometry[] = [];
+  const holes: THREE.BufferGeometry[] = [];
 
   for (const childId of group.childIds) {
     const child = nodes[childId];
@@ -98,19 +104,32 @@ export function evaluateGroup(
       geo,
       composeMatrix(child.position, child.rotation, child.scale),
     );
-    const brush = new Brush(baked);
-    brush.updateMatrixWorld();
-
-    if (role === "solid") {
-      solid = solid ? evaluator.evaluate(solid, brush, ADDITION) : brush;
-    } else {
-      holes.push(brush);
-    }
+    (role === "solid" ? solids : holes).push(baked);
   }
 
-  if (!solid) return null;
-  for (const hole of holes) {
-    solid = evaluator.evaluate(solid, hole, SUBTRACTION);
+  if (!solids.length) return null;
+  if (manifoldLoaded()) {
+    const clean = cutGroup(solids, holes);
+    if (clean) return clean;
+  }
+  return cutGroupBvh(solids, holes);
+}
+
+function cutGroupBvh(
+  solids: THREE.BufferGeometry[],
+  holes: THREE.BufferGeometry[],
+): THREE.BufferGeometry {
+  const brushOf = (geo: THREE.BufferGeometry) => {
+    const brush = new Brush(geo);
+    brush.updateMatrixWorld();
+    return brush;
+  };
+  let solid = brushOf(solids[0]);
+  for (const geo of solids.slice(1)) {
+    solid = evaluator.evaluate(solid, brushOf(geo), ADDITION);
+  }
+  for (const geo of holes) {
+    solid = evaluator.evaluate(solid, brushOf(geo), SUBTRACTION);
   }
   return compactEvaluated(solid.geometry);
 }

@@ -16,13 +16,16 @@ function buildFromGrid(
     const n = closeLoop ? a.length : a.length - 1;
     for (let j = 0; j < n; j++) {
       const j2 = (j + 1) % a.length;
-      // two triangles per quad, outward winding
+      // Two triangles per quad, counter-clockwise seen from outside: rows
+      // run bottom to top and rings anticlockwise, so the outward-facing
+      // order is (low, low-next, high-next), then (low, high-next, high).
+      // The caps wind the same way, which is what makes the solid closed.
       push(a[j]);
-      push(b[j]);
-      push(b[j2]);
-      push(a[j]);
-      push(b[j2]);
       push(a[j2]);
+      push(b[j2]);
+      push(a[j]);
+      push(b[j2]);
+      push(b[j]);
     }
   }
   const geo = new THREE.BufferGeometry();

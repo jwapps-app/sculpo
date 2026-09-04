@@ -103,7 +103,7 @@ put a matching `rclone.conf` in `/volume1/docker/sculpo/rclone/`.
 ## Architecture
 
 - **`pwa/`** — Vite + React + TypeScript, three.js via @react-three/fiber,
-  CSG through three-bvh-csg, state in zustand with undo via zundo.
+  booleans through Manifold (WebAssembly, watertight output), state in zustand with undo via zundo.
 - **`backend/`** — FastAPI, async SQLAlchemy, Alembic migrations run from the
   container entrypoint.
 - **`infra/nginx/`** — static serving, security headers, per-IP rate limiting
