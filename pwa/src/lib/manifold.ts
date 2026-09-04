@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 import * as THREE from "three";
+import { toCreasedNormals } from "three/addons/utils/BufferGeometryUtils.js";
 import type { CrossSection, Manifold, ManifoldToplevel } from "manifold-3d";
 // Not the npm package's loader: that one builds functions from strings,
 // which the site's Content Security Policy blocks, and the engine would
@@ -105,30 +106,30 @@ export function toManifold(geo: THREE.BufferGeometry): Manifold | null {
   }
 }
 
-/** Converts a Manifold to an indexed geometry with computed normals. */
+/**
+ * Converts a Manifold to a geometry with crease-aware normals. The normals
+ * are computed on the three.js side, not by Manifold's calculateNormals:
+ * that call is instant on a sphere and took 34 seconds on a 711k-triangle
+ * imported plate — an opened project that looked like it would never open.
+ * three's version does the same job on that mesh in 150 ms.
+ */
 export function fromManifold(m: Manifold): THREE.BufferGeometry {
-  const shaded = m.calculateNormals(0, SMOOTH_ANGLE_DEG);
-  const mesh = shaded.getMesh();
-  shaded.delete();
-
+  const mesh = m.getMesh();
   const stride = mesh.numProp;
   const count = mesh.vertProperties.length / stride;
   const positions = new Float32Array(count * 3);
-  const normals = new Float32Array(count * 3);
   for (let i = 0; i < count; i++) {
     const base = i * stride;
     positions[i * 3] = mesh.vertProperties[base];
     positions[i * 3 + 1] = mesh.vertProperties[base + 1];
     positions[i * 3 + 2] = mesh.vertProperties[base + 2];
-    normals[i * 3] = mesh.vertProperties[base + 3];
-    normals[i * 3 + 1] = mesh.vertProperties[base + 4];
-    normals[i * 3 + 2] = mesh.vertProperties[base + 5];
   }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-  geo.setAttribute("normal", new THREE.BufferAttribute(normals, 3));
-  geo.setIndex(new THREE.BufferAttribute(Uint32Array.from(mesh.triVerts), 1));
-  return geo;
+  const indexed = new THREE.BufferGeometry();
+  indexed.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  indexed.setIndex(new THREE.BufferAttribute(Uint32Array.from(mesh.triVerts), 1));
+  const shaded = toCreasedNormals(indexed, THREE.MathUtils.degToRad(SMOOTH_ANGLE_DEG));
+  indexed.dispose();
+  return shaded;
 }
 
 /**
@@ -269,6 +270,13 @@ export function repairExtrusion(geo: THREE.BufferGeometry): THREE.BufferGeometry
     solid?.delete();
     placed?.delete();
   }
+}
+
+/** True if every vertex sits on one of two z planes: text, a sketch, an
+ *  imported SVG. A single pass over the positions, so cheap enough to ask
+ *  about a scan before doing anything expensive with it. */
+export function isFlatExtrusion(geo: THREE.BufferGeometry): boolean {
+  return extrusionLevels(geo) !== null;
 }
 
 /** True if Manifold accepts the geometry as a closed, oriented solid. */

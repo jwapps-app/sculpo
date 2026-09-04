@@ -4,7 +4,13 @@ import type { GroupNode, Project, ShapeNode } from "../types/scene";
 import { isGroup } from "../types/scene";
 import { buildGeometry } from "./primitives";
 import { bakeTransform, composeMatrix } from "./transform";
-import { cutGroup, isClosedSolid, manifoldLoaded, repairExtrusion } from "./manifold";
+import {
+  cutGroup,
+  isClosedSolid,
+  isFlatExtrusion,
+  manifoldLoaded,
+  repairExtrusion,
+} from "./manifold";
 
 // Two engines. Manifold (WebAssembly, loaded asynchronously) is the real one:
 // its output is always a closed, consistently oriented skin, which is what a
@@ -97,7 +103,10 @@ export function evaluateGroup(
       role = child.role;
       // A glyph or SVG outline that overlaps itself is not a closed solid.
       // Rebuilt here, in its own flat frame, before the transform bakes in.
-      if (geo && manifoldLoaded() && !isClosedSolid(geo)) {
+      // Only flat extrusions can be rebuilt, so only they are probed: the
+      // probe is a full conversion, a second per 700k triangles, and a scan
+      // would pay it here and again in the cut for nothing.
+      if (geo && manifoldLoaded() && isFlatExtrusion(geo) && !isClosedSolid(geo)) {
         geo = repairExtrusion(geo) ?? geo;
       }
     }
