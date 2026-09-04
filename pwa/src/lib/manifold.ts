@@ -1,7 +1,11 @@
 import { useSyncExternalStore } from "react";
 import * as THREE from "three";
-import Module, { type CrossSection, type Manifold, type ManifoldToplevel } from "manifold-3d";
-import wasmUrl from "manifold-3d/manifold.wasm?url";
+import type { CrossSection, Manifold, ManifoldToplevel } from "manifold-3d";
+// Not the npm package's loader: that one builds functions from strings,
+// which the site's Content Security Policy blocks, and the engine would
+// silently never start on a real deployment. See vendor/manifold/README.md.
+import Module from "../../vendor/manifold/manifold.js";
+import wasmUrl from "../../vendor/manifold/manifold.wasm?url";
 
 // The boolean engine. Manifold guarantees watertight output: every result is
 // an oriented 2-manifold, so an engraved plate exports as one closed skin
@@ -13,22 +17,40 @@ import wasmUrl from "manifold-3d/manifold.wasm?url";
 // engine arrives so early groups get re-cut.
 
 let lib: ManifoldToplevel | null = null;
+let status: EngineStatus = "loading";
 const listeners = new Set<() => void>();
+
+export type EngineStatus = "loading" | "ready" | "failed";
+
+function settle(next: EngineStatus) {
+  status = next;
+  for (const l of listeners) l();
+}
 
 export const manifoldReady: Promise<boolean> = Module({ locateFile: () => wasmUrl })
   .then((m) => {
     m.setup();
     lib = m;
-    for (const l of listeners) l();
+    settle("ready");
     return true;
   })
   .catch((err: unknown) => {
     console.warn("Manifold engine failed to load; booleans use three-bvh-csg", err);
+    settle("failed");
     return false;
   });
 
 export function manifoldLoaded(): boolean {
   return lib !== null;
+}
+
+export function engineStatus(): EngineStatus {
+  return status;
+}
+
+/** Whether the engine is loading, ready, or failed to load. Re-renders on change. */
+export function useEngineStatus(): EngineStatus {
+  return useSyncExternalStore(subscribe, engineStatus, () => "loading" as const);
 }
 
 function subscribe(l: () => void) {

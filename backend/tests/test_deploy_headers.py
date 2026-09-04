@@ -59,3 +59,21 @@ def test_every_header_setting_location_reincludes_the_headers():
                 f"location '{body.splitlines()[0].strip()}' sets a header but does not "
                 "re-include security-headers.conf, so it drops all of them"
             )
+
+
+def test_boolean_engine_needs_no_eval(csp: str):
+    """The boolean engine is WebAssembly with a JavaScript loader. The stock
+    loader builds functions from strings, which the CSP blocks — and the app
+    then falls back to the old engine so quietly that the only symptom is a
+    slicer complaining about the export. The vendored loader is built with
+    dynamic execution disabled; make sure it stays that way, and that the
+    policy still refuses eval so the guard is meaningful."""
+    loader = CONF.parents[2] / "pwa" / "vendor" / "manifold" / "manifold.js"
+    assert loader.exists(), "vendored Manifold loader missing (pwa/vendor/manifold)"
+    text = loader.read_text()
+    for needle in ("new Function(", "Function.bind.apply", "eval("):
+        assert needle not in text, (
+            f"Manifold loader uses {needle!r}, which the CSP blocks; rebuild it "
+            "with -sDYNAMIC_EXECUTION=0 (see pwa/vendor/manifold/README.md)"
+        )
+    assert "'unsafe-eval'" not in csp.replace("'wasm-unsafe-eval'", "")

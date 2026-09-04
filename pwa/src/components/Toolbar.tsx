@@ -27,9 +27,11 @@ import {
   Redo2,
   EyeOff,
   Ungroup as UngroupIcon,
+  TriangleAlert,
 } from "lucide-react";
 import { APP_NAME } from "../constants/branding";
 import { useCoarsePointer } from "../lib/pointer";
+import { useEngineStatus } from "../lib/manifold";
 import { AXIS_COLORS } from "../constants/ui";
 import { SNAP_STEPS } from "../lib/units";
 import { useScene, undo, redo } from "../state/store";
@@ -111,6 +113,24 @@ function Popover({ children, onClose }: { children: React.ReactNode; onClose: ()
         {children}
       </div>
     </>
+  );
+}
+
+/** Shown only if the boolean engine could not start. Cuts still work through
+ *  the compatibility engine, but its output is not watertight, and that is
+ *  the kind of failure nobody notices until a slicer complains. */
+function EngineWarning() {
+  const status = useEngineStatus();
+  if (status !== "failed") return null;
+  return (
+    <span
+      role="status"
+      title="The boolean engine failed to load, so groups are cut with the compatibility engine. Exports of grouped shapes may not be watertight. Check the browser console for the reason."
+      className="ml-1 inline-flex items-center gap-1 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800"
+    >
+      <TriangleAlert size={12} />
+      <span className="hidden sm:inline">Engine fallback</span>
+    </span>
   );
 }
 
@@ -296,6 +316,7 @@ export function Toolbar() {
           {APP_NAME}
         </span>
       )}
+      <EngineWarning />
       <input
         key={projectId}
         defaultValue={projectName}
