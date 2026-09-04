@@ -66,7 +66,11 @@ export async function syncNow(): Promise<void> {
   if (useAuth.getState().status !== "signed-in") return;
   const s = useScene.getState();
   const project = s.project;
-  if (project === lastSynced) return;
+  // A project the cloud has never seen is never "already synced", however
+  // it got here: restored from this browser's autosave, opened from a file.
+  // Signing in is how local work reaches the server, and that has to hold
+  // without the user having to nudge a shape first.
+  if (project === lastSynced && s.cloudProjectId) return;
   // Don't create cloud rows for untouched empty scenes.
   if (!s.cloudProjectId && project.rootOrder.length === 0) return;
   if (inFlight) {

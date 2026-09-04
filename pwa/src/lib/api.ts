@@ -103,9 +103,9 @@ export interface InviteCreated {
 }
 
 export const api = {
-  async available(): Promise<boolean> {
+  async available(at: string = base()): Promise<boolean> {
     try {
-      const res = await fetch(`${base()}/health`);
+      const res = await fetch(`${at}/health`);
       if (!res.ok) return false;
       // Insist on the real health payload. A packaged build serves its own
       // shell for unknown paths, and misconfigured proxies return login pages,

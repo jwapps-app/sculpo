@@ -1,5 +1,13 @@
 import { create } from "zustand";
-import { api, getToken, setToken, setUnauthorizedHandler, type UserInfo } from "../lib/api";
+import {
+  api,
+  getServerUrl,
+  getToken,
+  setServerUrl,
+  setToken,
+  setUnauthorizedHandler,
+  type UserInfo,
+} from "../lib/api";
 
 // Shared auth state. When a backend is reachable the workspace is gated
 // behind sign-in; with no backend ("offline") the standalone tool is open.
@@ -25,8 +33,18 @@ export const useAuth = create<AuthState>()((set) => ({
   init: async () => {
     setUnauthorizedHandler(() => set({ status: "signed-out", user: null }));
     if (!(await api.available())) {
-      set({ status: "offline" });
-      return;
+      // A saved server URL that no longer answers must not strand a browser
+      // that is itself being served by a Sculpo server. The usual way in:
+      // the public hostname saved while on the LAN address, which the
+      // browser's cross-origin rules then refuse — same server, same
+      // database, but every request bounced. Prefer the origin we came from.
+      if (getServerUrl() && (await api.available("/api/v1"))) {
+        console.info(`Server ${getServerUrl()} unreachable from here; using this origin's own API.`);
+        setServerUrl(null);
+      } else {
+        set({ status: "offline" });
+        return;
+      }
     }
     if (getToken()) {
       try {
