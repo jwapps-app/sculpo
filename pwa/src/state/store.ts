@@ -8,6 +8,7 @@ import { newId } from "../lib/id";
 import { composeMatrix, decomposeMatrix } from "../lib/transform";
 import { workplaneNormal, type Workplane } from "../lib/workplane";
 import { sceneApi } from "../lib/sceneApi";
+import { planAlign } from "../lib/align";
 import { DEFAULT_STEP, type Units } from "../lib/units";
 
 export type TransformMode = "translate" | "rotate" | "scale";
@@ -93,12 +94,6 @@ function findFreeSpot(halfW: number, halfD: number, ids: string[]): [number, num
 }
 
 // Min/center/max of a world AABB along one axis.
-function boundsValue(box: THREE.Box3, axis: Axis, mode: AlignMode): number {
-  const min = box.min.getComponent(axis);
-  const max = box.max.getComponent(axis);
-  return mode === "min" ? min : mode === "max" ? max : (min + max) / 2;
-}
-
 // Creation transforms of the last duplicate, keyed by copy id — pressing
 // duplicate again with those copies still selected repeats the delta the user
 // applied to them (Tinkercad's pattern-making duplicate).
@@ -124,6 +119,9 @@ interface SceneState {
   cruiseMode: boolean;
   placing: PrimitiveKind | null;
   alignMode: boolean;
+  // Shapes the others align to while align mode is on. Empty means the whole
+  // selection is the reference.
+  alignAnchors: string[];
   measureMode: boolean;
   // Ruler datum on the workplane: while set, the selection shows persistent
   // dimensions and its offset from this origin. null = ruler off.
@@ -140,6 +138,9 @@ interface SceneState {
   placeShapeAt: (kind: PrimitiveKind, position: Vec3, rotation: Vec3) => void;
   setPlacing: (kind: PrimitiveKind | null) => void;
   setAlignMode: (on: boolean) => void;
+  // Plain click: make this the only anchor, or clear it if it already is.
+  // Additive (shift): toggle it in the anchor set.
+  toggleAlignAnchor: (id: string, additive: boolean) => void;
   setMeasureMode: (on: boolean) => void;
   toggleRuler: () => void;
   setRulerOrigin: (origin: [number, number] | null) => void;
@@ -223,6 +224,7 @@ export const useScene = create<SceneState>()(
       cruiseMode: false,
       placing: null,
       alignMode: false,
+      alignAnchors: [],
       measureMode: false,
       rulerOrigin: null,
       rulerPlacing: false,
@@ -316,7 +318,19 @@ export const useScene = create<SceneState>()(
       setPlacing: (kind) =>
         set({ placing: kind, ...(kind ? { workplaneArmed: false, cruiseMode: false } : {}) }),
 
-      setAlignMode: (on) => set({ alignMode: on, ...(on ? { measureMode: false } : {}) }),
+      setAlignMode: (on) =>
+        set({ alignMode: on, alignAnchors: [], ...(on ? { measureMode: false } : {}) }),
+      toggleAlignAnchor: (id, additive) =>
+        set((s) => {
+          const has = s.alignAnchors.includes(id);
+          if (additive) {
+            return {
+              alignAnchors: has ? s.alignAnchors.filter((x) => x !== id) : [...s.alignAnchors, id],
+            };
+          }
+          const onlyThis = has && s.alignAnchors.length === 1;
+          return { alignAnchors: onlyThis ? [] : [id] };
+        }),
       setMeasureMode: (on) =>
         set({ measureMode: on, ...(on ? { alignMode: false, cruiseMode: false } : {}) }),
 
@@ -451,23 +465,16 @@ export const useScene = create<SceneState>()(
       },
 
       alignSelected: (axis, mode) => {
-        const { selection, project } = get();
+        const { selection, project, alignAnchors } = get();
         const items = selection
           .map((id) => ({ id, box: sceneApi.getNodeBounds(id) }))
           .filter((x): x is { id: string; box: THREE.Box3 } => !!project.nodes[x.id] && !project.nodes[x.id].locked && !!x.box);
-        if (items.length < 2) return;
-        const target =
-          mode === "min"
-            ? Math.min(...items.map((x) => boundsValue(x.box, axis, "min")))
-            : mode === "max"
-              ? Math.max(...items.map((x) => boundsValue(x.box, axis, "max")))
-              : items.reduce((sum, x) => sum + boundsValue(x.box, axis, "center"), 0) /
-                items.length;
+        const plan = planAlign(items, alignAnchors, axis, mode);
+        if (!plan?.changes) return;
         set((s) => {
           const nodes = { ...s.project.nodes };
-          for (const { id, box } of items) {
+          for (const { id, shift } of plan.moves) {
             const n = nodes[id];
-            const shift = target - boundsValue(box, axis, mode);
             const position = [...n.position] as Vec3;
             position[axis] += shift;
             nodes[id] = { ...n, position };

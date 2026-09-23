@@ -6,6 +6,11 @@ import { sceneApi } from "../lib/sceneApi";
 import { gizmoState } from "../lib/gizmoState";
 import { AXIS_COLORS } from "../constants/ui";
 import { isCoarsePointer } from "../lib/pointer";
+import { boundsValue, planAlign, type AlignItem } from "../lib/align";
+
+// Outline for the shapes everything else aligns to. Distinct from the three
+// axis colors and from the blue selection tint.
+const ANCHOR_COLOR = "#f59e0b";
 
 interface DotDef {
   key: string;
@@ -18,15 +23,11 @@ const DOTS: DotDef[] = ([0, 1, 2] as Axis[]).flatMap((axis) =>
   MODES.map((mode) => ({ key: `${axis}-${mode}`, axis, mode })),
 );
 
-function boundsValue(box: THREE.Box3, axis: Axis, mode: AlignMode): number {
-  const min = box.min.getComponent(axis);
-  const max = box.max.getComponent(axis);
-  return mode === "min" ? min : mode === "max" ? max : (min + max) / 2;
-}
-
 // Tinkercad-style align: with align mode on and 2+ objects selected, colored
 // dots appear along the selection bounds — three per axis. Hovering previews
-// where everything will move; clicking applies that alignment.
+// where everything will move; clicking applies that alignment. Clicking a
+// selected shape first makes it the anchor: it stays put and the rest line up
+// with it (shift-click for several, whose combined bounds are the reference).
 export function AlignDots() {
   const camera = useThree((s) => s.camera);
   const alignMode = useScene((s) => s.alignMode);
@@ -34,12 +35,21 @@ export function AlignDots() {
   const selection = useScene((s) => s.selection);
   const nodes = useScene((s) => s.project.nodes);
   const alignSelected = useScene((s) => s.alignSelected);
+  const anchorsRaw = useScene((s) => s.alignAnchors);
+  const toggleAlignAnchor = useScene((s) => s.toggleAlignAnchor);
 
   const ids = useMemo(
     () => selection.filter((id) => nodes[id] && !nodes[id].locked && !nodes[id].hidden),
     [selection, nodes],
   );
   const active = alignMode && ids.length >= 2;
+  const anchors = useMemo(() => anchorsRaw.filter((id) => ids.includes(id)), [anchorsRaw, ids]);
+
+  // An anchor dropped from the selection (shift-click, delete, undo) stops
+  // being one, rather than lingering invisibly and steering the next align.
+  useEffect(() => {
+    for (const id of anchorsRaw) if (!ids.includes(id)) toggleAlignAnchor(id, true);
+  }, [anchorsRaw, ids, toggleAlignAnchor]);
 
   // Leave align mode when the selection stops being alignable.
   useEffect(() => {
@@ -58,22 +68,47 @@ export function AlignDots() {
   // Tinkercad. Recomputed each frame alongside dot positions.
   const inert = useRef<Set<string>>(new Set());
 
-  const itemBounds = (): THREE.Box3[] => {
-    const out: THREE.Box3[] = [];
+  const itemBounds = (): AlignItem[] => {
+    const out: AlignItem[] = [];
     for (const id of ids) {
-      const b = sceneApi.getNodeBounds(id);
-      if (b) out.push(b);
+      const box = sceneApi.getNodeBounds(id);
+      if (box) out.push({ id, box });
     }
     return out;
   };
+
+  // One reusable outline per anchor, refitted every frame so it follows undo
+  // and edits made in the inspector.
+  const anchorBoxes = useMemo(
+    () => anchors.map(() => new THREE.Box3(new THREE.Vector3(), new THREE.Vector3())),
+    [anchors],
+  );
+  const anchorHelpers = useMemo(
+    () => anchorBoxes.map((b) => new THREE.Box3Helper(b, new THREE.Color(ANCHOR_COLOR))),
+    [anchorBoxes],
+  );
+  useEffect(
+    () => () => {
+      for (const h of anchorHelpers) {
+        h.geometry.dispose();
+        (h.material as THREE.Material).dispose();
+      }
+    },
+    [anchorHelpers],
+  );
 
   useFrame(() => {
     const g = group.current;
     if (!g) return;
     const items = active ? itemBounds() : [];
-    const box = items.length >= 2 ? items.reduce((u, b) => u.union(b), new THREE.Box3()) : null;
+    const box =
+      items.length >= 2 ? items.reduce((u, x) => u.union(x.box), new THREE.Box3()) : null;
     g.visible = !!box;
     if (!box) return;
+    anchors.forEach((id, i) => {
+      const b = items.find((x) => x.id === id)?.box;
+      if (b && anchorBoxes[i]) anchorBoxes[i].copy(b).expandByScalar(0.3);
+    });
     const c = box.getCenter(new THREE.Vector3());
     const dist = camera.position.distanceTo(c);
     const off = Math.max(4, dist * 0.03);
@@ -85,14 +120,7 @@ export function AlignDots() {
       else if (def.axis === 1) mesh.position.set(box.min.x - off, v, box.min.z);
       else mesh.position.set(box.min.x - off, box.min.y - off, v);
 
-      const values = items.map((b) => boundsValue(b, def.axis, def.mode));
-      const target =
-        def.mode === "min"
-          ? Math.min(...values)
-          : def.mode === "max"
-            ? Math.max(...values)
-            : values.reduce((s, x) => s + x, 0) / values.length;
-      const moves = values.some((x) => Math.abs(target - x) > 0.05);
+      const moves = !!planAlign(items, anchors, def.axis, def.mode)?.changes;
       if (moves) inert.current.delete(def.key);
       else inert.current.add(def.key);
 
@@ -108,29 +136,21 @@ export function AlignDots() {
     }
   });
 
-  // Hover preview: wireframe boxes at each object's post-align bounds.
+  // Hover preview: wireframe boxes where each moving shape will land. Anchors
+  // don't move, so they get none.
   const previews = useMemo(() => {
     if (!hover || !active) return null;
-    const items = ids
-      .map((id) => ({ id, box: sceneApi.getNodeBounds(id) }))
-      .filter((x): x is { id: string; box: THREE.Box3 } => !!x.box);
-    if (items.length < 2) return null;
-    const target =
-      hover.mode === "min"
-        ? Math.min(...items.map((x) => boundsValue(x.box, hover.axis, "min")))
-        : hover.mode === "max"
-          ? Math.max(...items.map((x) => boundsValue(x.box, hover.axis, "max")))
-          : items.reduce((sum, x) => sum + boundsValue(x.box, hover.axis, "center"), 0) /
-            items.length;
-    return items.map(({ box }) => {
-      const shifted = box.clone();
-      const shift = target - boundsValue(box, hover.axis, hover.mode);
+    const items = itemBounds();
+    const plan = planAlign(items, anchors, hover.axis, hover.mode);
+    if (!plan) return null;
+    return plan.moves.map(({ id, shift }) => {
+      const shifted = items.find((x) => x.id === id)!.box.clone();
       shifted.min.setComponent(hover.axis, shifted.min.getComponent(hover.axis) + shift);
       shifted.max.setComponent(hover.axis, shifted.max.getComponent(hover.axis) + shift);
       return new THREE.Box3Helper(shifted, new THREE.Color(AXIS_COLORS[hover.axis]));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hover, active, ids, nodes]);
+  }, [hover, active, ids, nodes, anchors]);
 
   if (!active) return null;
 
@@ -174,6 +194,9 @@ export function AlignDots() {
       </group>
       {previews?.map((helper, i) => (
         <primitive key={i} object={helper} />
+      ))}
+      {anchorHelpers.map((helper, i) => (
+        <primitive key={`anchor-${anchors[i]}`} object={helper} raycast={() => null} />
       ))}
     </>
   );

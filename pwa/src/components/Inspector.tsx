@@ -480,17 +480,29 @@ function FlipRow() {
 function AlignPanel() {
   const alignMode = useScene((s) => s.alignMode);
   const setAlignMode = useScene((s) => s.setAlignMode);
+  const anchorCount = useScene((s) => s.alignAnchors.length);
   return (
-    <button
-      onClick={() => setAlignMode(!alignMode)}
-      className={`rounded border px-2 py-1 text-xs ${
-        alignMode
-          ? "border-neutral-700 bg-neutral-800 text-white"
-          : "border-neutral-300 hover:bg-neutral-100"
-      }`}
-    >
-      {alignMode ? "Align: click the colored dots" : "Align (L)"}
-    </button>
+    <div className="flex flex-col gap-1">
+      <button
+        onClick={() => setAlignMode(!alignMode)}
+        className={`rounded border px-2 py-1 text-xs ${
+          alignMode
+            ? "border-neutral-700 bg-neutral-800 text-white"
+            : "border-neutral-300 hover:bg-neutral-100"
+        }`}
+      >
+        {alignMode ? "Align: click the colored dots" : "Align (L)"}
+      </button>
+      {alignMode && (
+        <p className="text-[11px] leading-snug text-neutral-500">
+          {anchorCount === 0
+            ? "Click a shape to keep it still and line the others up with it."
+            : anchorCount === 1
+              ? "The outlined shape stays put. Click it again to clear, shift-click to add more."
+              : `The ${anchorCount} outlined shapes stay put; the rest line up with them.`}
+        </p>
+      )}
+    </div>
   );
 }
 

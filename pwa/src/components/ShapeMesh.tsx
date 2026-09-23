@@ -25,6 +25,22 @@ export function handleMeshClick(e: ThreeEvent<MouseEvent>, nodeId: string) {
     }
     return;
   }
+  if (s.alignMode) {
+    // Tinkercad's align: clicking a selected shape makes it the one the
+    // others line up with, rather than collapsing the selection to it — which
+    // used to drop out of align mode, since align needs two shapes.
+    if (s.selection.includes(nodeId)) {
+      s.toggleAlignAnchor(nodeId, e.shiftKey);
+      return;
+    }
+    // Shift-click grows the selection without leaving align mode, so a third
+    // shape can join two already lined up.
+    if (e.shiftKey) {
+      s.select(nodeId, true);
+      return;
+    }
+    s.setAlignMode(false);
+  }
   s.select(nodeId, e.shiftKey);
 }
 

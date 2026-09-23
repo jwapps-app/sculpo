@@ -412,7 +412,7 @@ export function Toolbar() {
         onClick={() => setAlignMode(!alignMode)}
         disabled={selection.length < 2 && !alignMode}
         active={alignMode}
-        label="Align (L) — click the colored dots on the selection"
+        label="Align (L) — click a shape to align to it, then a colored dot"
       />
 
       <div className="relative">
