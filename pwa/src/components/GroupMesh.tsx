@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import * as THREE from "three";
 import type { GroupNode } from "../types/scene";
+import { nodeRole } from "../types/scene";
 import { evaluateGroup, firstSolidColor, subtreeSignature } from "../lib/csg";
 import { useManifoldLoaded } from "../lib/manifold";
 import { useScene } from "../state/store";
@@ -27,6 +28,8 @@ export function GroupMesh({ node, dimmed = false }: { node: GroupNode; dimmed?: 
     [signature],
   );
   const color = node.color ?? inherited;
+  // Nothing solid inside: a hole group, drawn like any other hole.
+  const isHole = useScene((s) => nodeRole(node, s.project.nodes) === "hole");
 
   if (node.hidden || !geometry) return null;
 
@@ -52,16 +55,16 @@ export function GroupMesh({ node, dimmed = false }: { node: GroupNode; dimmed?: 
       }
     >
       <meshStandardMaterial
-        color={color}
-        transparent={dimmed || !!node.transparent}
-        opacity={dimmed ? 0.15 : node.transparent ? 0.45 : 1}
+        color={isHole ? "#9aa0a6" : color}
+        transparent={isHole || dimmed || !!node.transparent}
+        opacity={dimmed ? 0.15 : isHole ? 0.4 : node.transparent ? 0.45 : 1}
         emissive={selected && !dimmed ? "#2a6cd4" : "#000000"}
         emissiveIntensity={selected && !dimmed ? 0.35 : 0}
         roughness={0.65}
         metalness={0.05}
         side={THREE.DoubleSide}
       />
-      <MeshEdges geometry={geometry} faded={dimmed} />
+      <MeshEdges geometry={geometry} faded={dimmed || isHole} />
     </mesh>
   );
 }

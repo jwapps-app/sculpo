@@ -207,7 +207,7 @@ export function Toolbar() {
       );
     } else if (skippedHoles > 0) {
       alert(
-        `Exported ${exported} object(s). Skipped ${skippedHoles} ungrouped hole(s) — a hole only cuts inside a group.`,
+        `Exported ${exported} object(s). Skipped ${skippedHoles} loose hole(s) — a hole only cuts when grouped with a solid.`,
       );
     }
   };

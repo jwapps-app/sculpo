@@ -11,7 +11,7 @@ import {
   type Units,
 } from "../lib/units";
 import type { ShapeNode, Vec3 } from "../types/scene";
-import { isGroup } from "../types/scene";
+import { isGroup, nodeRole } from "../types/scene";
 import { useScene } from "../state/store";
 
 function NumberField({
@@ -540,11 +540,20 @@ export function Inspector() {
 
   if (isGroup(selected[0])) {
     const group = selected[0];
+    const holeGroup = nodeRole(group, nodes) === "hole";
     return (
       <div className="flex w-56 flex-col gap-4 overflow-y-auto border-l border-neutral-200 bg-white p-3">
-        <div className="text-sm font-semibold">
-          Group · {group.childIds.length} children
+        <div>
+          <div className="text-sm font-semibold">
+            {holeGroup ? "Hole group" : "Group"} · {group.childIds.length} children
+          </div>
+          {holeGroup && (
+            <p className="mt-1 text-[11px] leading-snug text-neutral-500">
+              These holes act as one. Group it with a solid to cut them all at once.
+            </p>
+          )}
         </div>
+        {!holeGroup && (
         <label className="flex items-center justify-between gap-2 text-sm">
           <span className="text-neutral-500">Color</span>
           <span className="flex items-center gap-1">
@@ -565,6 +574,7 @@ export function Inspector() {
             </button>
           </span>
         </label>
+        )}
         <VecFields
           title={`Position (${units})`}
           value={group.position}

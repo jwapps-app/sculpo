@@ -36,13 +36,6 @@ function collectSubtree(id: string, nodes: Project["nodes"], acc: Set<string>) {
   if (isGroup(node)) node.childIds.forEach((c) => collectSubtree(c, nodes, acc));
 }
 
-function hasSolidContent(id: string, nodes: Project["nodes"]): boolean {
-  const node = nodes[id];
-  if (!node) return false;
-  if (isGroup(node)) return node.childIds.some((c) => hasSolidContent(c, nodes));
-  return node.role === "solid";
-}
-
 function cloneSubtree(
   id: string,
   nodes: Project["nodes"],
@@ -797,10 +790,8 @@ export const useScene = create<SceneState>()(
         const { selection, project } = get();
         const ids = project.rootOrder.filter((id) => selection.includes(id));
         if (ids.length < 2) return;
-        if (!ids.some((id) => hasSolidContent(id, project.nodes))) {
-          alert("A group needs at least one solid shape.");
-          return;
-        }
+        // A group with no solid in it is a hole group: its holes merge into
+        // one hole that cuts as a single piece once grouped with a solid.
         const group: GroupNode = {
           id: newId(),
           type: "group",

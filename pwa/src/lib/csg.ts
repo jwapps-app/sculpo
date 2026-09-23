@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { Brush, Evaluator, ADDITION, SUBTRACTION } from "three-bvh-csg";
 import type { GroupNode, Project, ShapeNode } from "../types/scene";
-import { isGroup } from "../types/scene";
+import { isGroup, nodeRole } from "../types/scene";
 import { buildGeometry } from "./primitives";
 import { bakeTransform, composeMatrix } from "./transform";
 import {
@@ -78,10 +78,12 @@ function compactEvaluated(geo: THREE.BufferGeometry): THREE.BufferGeometry {
 }
 
 // Evaluates a group per the Tinkercad rule: union of solid children minus the
-// union of hole children. Nested groups evaluate innermost-first and count as
-// solid children. The result is in the group's local space (children keep
-// their own transforms; the group's transform is applied at render/export).
-// Returns null when the group has no solid contribution.
+// union of hole children. Nested groups evaluate innermost-first; a nested
+// group counts as a solid unless nothing inside it is solid, in which case it
+// is a hole group and cuts. A hole group on its own evaluates to the union of
+// its holes, so it can be seen, moved and measured as one shape. The result
+// is in the group's local space (children keep their own transforms; the
+// group's transform is applied at render/export). Null when empty.
 export function evaluateGroup(
   group: GroupNode,
   nodes: Project["nodes"],
@@ -97,7 +99,7 @@ export function evaluateGroup(
     let role: "solid" | "hole";
     if (isGroup(child)) {
       geo = evaluateGroup(child, nodes);
-      role = "solid";
+      role = nodeRole(child, nodes);
     } else {
       geo = buildGeometry(child);
       role = child.role;
@@ -121,12 +123,14 @@ export function evaluateGroup(
     (role === "solid" ? solids : holes).push(baked);
   }
 
-  if (!solids.length) return null;
+  // Nothing solid: a hole group. Its shape is the union of its holes.
+  const [add, cut] = solids.length ? [solids, holes] : [holes, []];
+  if (!add.length) return null;
   if (manifoldLoaded()) {
-    const clean = cutGroup(solids, holes);
+    const clean = cutGroup(add, cut);
     if (clean) return clean;
   }
-  return cutGroupBvh(solids, holes);
+  return cutGroupBvh(add, cut);
 }
 
 function cutGroupBvh(

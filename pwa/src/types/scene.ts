@@ -61,6 +61,24 @@ export function isGroup(node: SceneNode): node is GroupNode {
   return (node as GroupNode).type === "group";
 }
 
+/** True if any shape inside this node, however deeply nested, is a solid. */
+export function hasSolidContent(id: string, nodes: Project["nodes"]): boolean {
+  const node = nodes[id];
+  if (!node) return false;
+  if (isGroup(node)) return node.childIds.some((c) => hasSolidContent(c, nodes));
+  return node.role === "solid";
+}
+
+/**
+ * Whether a node cuts or adds. A shape says so itself; a group is a hole when
+ * nothing inside it is solid — Tinkercad's rule, so holes can be grouped into
+ * one compound hole and then used to cut as a single piece.
+ */
+export function nodeRole(node: SceneNode, nodes: Project["nodes"]): "solid" | "hole" {
+  if (!isGroup(node)) return node.role;
+  return hasSolidContent(node.id, nodes) ? "solid" : "hole";
+}
+
 export interface Project {
   id: string;
   name: string;

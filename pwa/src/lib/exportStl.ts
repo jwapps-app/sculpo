@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { STLExporter } from "three/addons/exporters/STLExporter.js";
 import { OBJExporter } from "three/addons/exporters/OBJExporter.js";
 import type { Project } from "../types/scene";
-import { isGroup } from "../types/scene";
+import { isGroup, nodeRole } from "../types/scene";
 import { buildGeometry } from "./primitives";
 import { evaluateGroup } from "./csg";
 import { asClosedSolid, manifoldLoaded } from "./manifold";
@@ -39,11 +39,12 @@ export function exportSceneStl(project: Project, options: ExportOptions = {}): E
     if (!node || node.hidden) continue;
 
     let geometry: THREE.BufferGeometry | null;
-    if (isGroup(node)) {
-      geometry = evaluateGroup(node, project.nodes);
-    } else if (node.role === "hole") {
+    if (nodeRole(node, project.nodes) === "hole") {
+      // Loose holes, single or grouped, have nothing to cut out here.
       skippedHoles++;
       continue;
+    } else if (isGroup(node)) {
+      geometry = evaluateGroup(node, project.nodes);
     } else {
       geometry = buildGeometry(node);
       // Lone text and SVG shapes get the same outline repair groups do.
