@@ -20,6 +20,7 @@ import { GroupMesh } from "./GroupMesh";
 import { Gizmo } from "./Gizmo";
 import { ResizeHandles } from "./ResizeHandles";
 import { AlignDots } from "./AlignDots";
+import { FilletEdges } from "./FilletEdges";
 import { MeasureOverlay } from "./MeasureOverlay";
 import { RulerOverlay } from "./RulerOverlay";
 import { ViewCube } from "./ViewCube";
@@ -574,6 +575,10 @@ export function Viewport() {
             s.setAlignMode(false);
             return;
           }
+          if (s.filletMode) {
+            s.setFilletMode(false);
+            return;
+          }
           if (s.measureMode) return; // clicks are measurement points
           clearSelection();
         }}
@@ -627,6 +632,7 @@ export function Viewport() {
         <Gizmo />
         <ResizeHandles />
         <AlignDots />
+        <FilletEdges />
         <MeasureOverlay />
         <RulerOverlay />
         <PlacementPreview />

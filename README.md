@@ -19,7 +19,8 @@ network unplugged.
 **Model.** Sixteen primitives — box, cylinder, sphere, hemisphere, cone,
 torus, tube, wedge, roof, pyramid, polygon, octagon, star, gear, thread, and
 3D text — placed by click, snapped against neighbours as you go. Move, rotate
-and scale by gizmo or by typing exact numbers.
+and scale by gizmo or by typing exact numbers. Round a box's edges one at a
+time: turn on edge picking and click the edges you want filleted.
 
 **Cut.** Any shape can be a *hole* instead of a solid. Group it with a solid
 and the boolean runs — subtract a cylinder to drill, a box to notch. Groups

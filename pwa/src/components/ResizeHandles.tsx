@@ -107,6 +107,7 @@ export function ResizeHandles() {
   const workplaneArmed = useScene((s) => s.workplaneArmed);
   const alignMode = useScene((s) => s.alignMode);
   const measureMode = useScene((s) => s.measureMode);
+  const filletMode = useScene((s) => s.filletMode);
   const units = useScene((s) => s.units);
 
   const ids = useMemo(
@@ -121,7 +122,7 @@ export function ResizeHandles() {
   const coarse = useCoarsePointer();
   const modeAllows = coarse ? mode === "scale" : mode !== "rotate";
   const visible =
-    ids.length > 0 && modeAllows && !workplaneArmed && !alignMode && !measureMode;
+    ids.length > 0 && modeAllows && !workplaneArmed && !alignMode && !measureMode && !filletMode;
 
   const group = useRef<THREE.Group>(null);
   const drag = useRef<DragState | null>(null);

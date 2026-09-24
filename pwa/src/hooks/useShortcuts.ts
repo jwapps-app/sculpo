@@ -92,6 +92,13 @@ export function useShortcuts() {
         case "m":
           s.setMeasureMode(!s.measureMode);
           break;
+        case "e": {
+          // Round edges: needs exactly one box selected.
+          const only = s.selection.length === 1 ? s.project.nodes[s.selection[0]] : undefined;
+          if (s.filletMode) s.setFilletMode(false);
+          else if (only && !isGroup(only) && only.kind === "box") s.setFilletMode(true);
+          break;
+        }
         case "d":
           s.dropSelectedToWorkplane();
           break;
@@ -132,6 +139,7 @@ export function useShortcuts() {
           else if (s.placing) s.setPlacing(null);
           else if (s.workplaneArmed) s.setWorkplaneArmed(false);
           else if (s.alignMode) s.setAlignMode(false);
+          else if (s.filletMode) s.setFilletMode(false);
           else if (s.measureMode) s.setMeasureMode(false);
           else if (s.cruiseMode) s.setCruiseMode(false);
           else if (s.editingGroupId) s.setEditingGroup(null);

@@ -1,8 +1,10 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import type { ThreeEvent } from "@react-three/fiber";
 import type { ShapeNode } from "../types/scene";
+import { isGroup } from "../types/scene";
 import { buildGeometry } from "../lib/primitives";
+import { useManifoldLoaded } from "../lib/manifold";
 import { workplaneFromHit } from "../lib/workplane";
 import { gizmoState } from "../lib/gizmoState";
 import { useScene } from "../state/store";
@@ -23,6 +25,16 @@ export function handleMeshClick(e: ThreeEvent<MouseEvent>, nodeId: string) {
         .transformDirection(e.object.matrixWorld);
       s.setWorkplane(workplaneFromHit(e.point, normal));
     }
+    return;
+  }
+  if (s.filletMode) {
+    // Rounding edges: the box's faces are not targets (its edges are, drawn
+    // on top). Clicking another box moves the tool to it; anything else
+    // ends the tool and selects as usual.
+    if (s.selection.includes(nodeId)) return;
+    const clicked = s.project.nodes[nodeId];
+    if (!clicked || isGroup(clicked) || clicked.kind !== "box") s.setFilletMode(false);
+    s.select(nodeId, false);
     return;
   }
   if (s.alignMode) {
@@ -71,12 +83,30 @@ export function MeshEdges({
 
 export function ShapeMesh({ node, dimmed = false }: { node: ShapeNode; dimmed?: boolean }) {
   const selected = useScene((s) => s.selection.includes(node.id));
+  // Boxes with picked rounded edges are built by the boolean engine and show
+  // sharp until it loads; rebuild when it does.
+  const engineReady = useManifoldLoaded();
 
   const geometry = useMemo(
     () => buildGeometry(node),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [node.kind, JSON.stringify(node.params)],
+    [node.kind, JSON.stringify(node.params), engineReady],
   );
+
+  // Resize handles and the gizmo move the mesh directly while dragging, then
+  // commit to the store. A box's commit folds its scale into w/d/h, so its
+  // scale prop reads [1, 1, 1] before and after — unchanged as far as the
+  // renderer can tell, which would leave the drag's stretch on the mesh on
+  // top of the new size. Re-apply the committed transform whenever the node
+  // or its geometry changes.
+  const meshRef = useRef<THREE.Mesh>(null);
+  useLayoutEffect(() => {
+    const m = meshRef.current;
+    if (!m) return;
+    m.position.set(...node.position);
+    m.rotation.set(...node.rotation);
+    m.scale.set(...node.scale);
+  }, [node.position, node.rotation, node.scale, geometry]);
 
   if (node.hidden || !geometry) return null;
 
@@ -84,6 +114,7 @@ export function ShapeMesh({ node, dimmed = false }: { node: ShapeNode; dimmed?: 
 
   return (
     <mesh
+      ref={meshRef}
       name={node.id}
       userData={dimmed ? {} : { nodeId: node.id }}
       geometry={geometry}

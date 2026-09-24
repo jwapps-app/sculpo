@@ -9,6 +9,12 @@ import { composeMatrix, decomposeMatrix } from "../lib/transform";
 import { workplaneNormal, type Workplane } from "../lib/workplane";
 import { sceneApi } from "../lib/sceneApi";
 import { planAlign } from "../lib/align";
+import {
+  DEFAULT_FILLET_RADIUS,
+  formatEdges,
+  maxFilletRadius,
+  roundedEdges,
+} from "../lib/boxEdges";
 import { DEFAULT_STEP, type Units } from "../lib/units";
 
 export type TransformMode = "translate" | "rotate" | "scale";
@@ -34,6 +40,31 @@ function collectSubtree(id: string, nodes: Project["nodes"], acc: Set<string>) {
   if (!node || acc.has(id)) return;
   acc.add(id);
   if (isGroup(node)) node.childIds.forEach((c) => collectSubtree(c, nodes, acc));
+}
+
+// A box's size lives in its w/d/h params, not in its scale: rounded edges are
+// built at a fixed radius in millimetres, and a scaled box would stretch them
+// into ovals. Every path that can leave a box scaled — resize handles, the
+// gizmo, the Size row, the Scale fields, mirror, ungroup — passes the node
+// through here, which moves the scale into the dimensions. The box looks the
+// same; its rounding stays round. A mirror's sign stays in the scale.
+function foldBoxScale<T extends SceneNode>(node: T): T {
+  if (isGroup(node) || node.kind !== "box") return node;
+  const mags = node.scale.map(Math.abs);
+  if (mags.every((m) => Math.abs(m - 1) < 1e-6)) return node;
+  const p = node.params;
+  const dim = (key: string, fallback: number) =>
+    typeof p[key] === "number" && Number.isFinite(p[key]) ? (p[key] as number) : fallback;
+  return {
+    ...node,
+    params: {
+      ...p,
+      w: dim("w", 20) * mags[0],
+      d: dim("d", 20) * mags[1],
+      h: dim("h", 20) * mags[2],
+    },
+    scale: node.scale.map((v) => (v < 0 ? -1 : 1)) as Vec3,
+  };
 }
 
 function cloneSubtree(
@@ -115,6 +146,8 @@ interface SceneState {
   // Shapes the others align to while align mode is on. Empty means the whole
   // selection is the reference.
   alignAnchors: string[];
+  // Click-to-round: edges of the selected box become clickable.
+  filletMode: boolean;
   measureMode: boolean;
   // Ruler datum on the workplane: while set, the selection shows persistent
   // dimensions and its offset from this origin. null = ruler off.
@@ -134,6 +167,10 @@ interface SceneState {
   // Plain click: make this the only anchor, or clear it if it already is.
   // Additive (shift): toggle it in the anchor set.
   toggleAlignAnchor: (id: string, additive: boolean) => void;
+  setFilletMode: (on: boolean) => void;
+  // Rounds the edge if it is square, squares it if it is rounded.
+  toggleBoxEdge: (id: string, edge: number) => void;
+  setBoxEdges: (id: string, edges: number[]) => void;
   setMeasureMode: (on: boolean) => void;
   toggleRuler: () => void;
   setRulerOrigin: (origin: [number, number] | null) => void;
@@ -218,6 +255,7 @@ export const useScene = create<SceneState>()(
       placing: null,
       alignMode: false,
       alignAnchors: [],
+      filletMode: false,
       measureMode: false,
       rulerOrigin: null,
       rulerPlacing: false,
@@ -312,7 +350,38 @@ export const useScene = create<SceneState>()(
         set({ placing: kind, ...(kind ? { workplaneArmed: false, cruiseMode: false } : {}) }),
 
       setAlignMode: (on) =>
-        set({ alignMode: on, alignAnchors: [], ...(on ? { measureMode: false } : {}) }),
+        set({
+          alignMode: on,
+          alignAnchors: [],
+          ...(on ? { measureMode: false, filletMode: false } : {}),
+        }),
+      setFilletMode: (on) =>
+        set({ filletMode: on, ...(on ? { alignMode: false, measureMode: false } : {}) }),
+      toggleBoxEdge: (id, edge) => {
+        const node = get().project.nodes[id];
+        if (!node || isGroup(node) || node.kind !== "box" || node.locked) return;
+        const current = roundedEdges(node.params);
+        const next = current.includes(edge)
+          ? current.filter((e) => e !== edge)
+          : [...current, edge];
+        get().setBoxEdges(id, next);
+      },
+      setBoxEdges: (id, edges) => {
+        const node = get().project.nodes[id];
+        if (!node || isGroup(node) || node.kind !== "box" || node.locked) return;
+        const box = foldBoxScale(node);
+        const p = box.params;
+        const params: Record<string, number | string> = { ...p, edges: formatEdges(edges) };
+        // The first edge picked on a square box needs a radius to show.
+        const radius = typeof p.radius === "number" ? p.radius : 0;
+        if (edges.length && radius <= 0.01) {
+          const size = (k: string) => (typeof p[k] === "number" ? (p[k] as number) : 20);
+          params.radius = Math.min(DEFAULT_FILLET_RADIUS, maxFilletRadius(size("w"), size("d"), size("h")));
+        }
+        set((s) => ({
+          project: { ...s.project, nodes: { ...s.project.nodes, [id]: { ...box, params } } },
+        }));
+      },
       toggleAlignAnchor: (id, additive) =>
         set((s) => {
           const has = s.alignAnchors.includes(id);
@@ -325,7 +394,10 @@ export const useScene = create<SceneState>()(
           return { alignAnchors: onlyThis ? [] : [id] };
         }),
       setMeasureMode: (on) =>
-        set({ measureMode: on, ...(on ? { alignMode: false, cruiseMode: false } : {}) }),
+        set({
+          measureMode: on,
+          ...(on ? { alignMode: false, cruiseMode: false, filletMode: false } : {}),
+        }),
 
       toggleRuler: () => {
         const { rulerOrigin, rulerPlacing } = get();
@@ -415,7 +487,7 @@ export const useScene = create<SceneState>()(
         set((s) => ({
           project: {
             ...s.project,
-            nodes: { ...s.project.nodes, [id]: { ...node, ...patch } },
+            nodes: { ...s.project.nodes, [id]: foldBoxScale({ ...node, ...patch }) },
           },
         }));
       },
@@ -430,7 +502,12 @@ export const useScene = create<SceneState>()(
           for (const e of entries) {
             const node = nodes[e.id];
             if (!node) continue;
-            nodes[e.id] = { ...node, position: e.position, rotation: e.rotation, scale: e.scale };
+            nodes[e.id] = foldBoxScale({
+              ...node,
+              position: e.position,
+              rotation: e.rotation,
+              scale: e.scale,
+            });
           }
           return { project: { ...s.project, nodes } };
         });
@@ -498,7 +575,7 @@ export const useScene = create<SceneState>()(
             const m = reflect
               .clone()
               .multiply(composeMatrix(n.position, n.rotation, n.scale));
-            nodes[id] = { ...n, ...decomposeMatrix(m) };
+            nodes[id] = foldBoxScale({ ...n, ...decomposeMatrix(m) });
           }
           return { project: { ...s.project, nodes } };
         });
@@ -600,7 +677,7 @@ export const useScene = create<SceneState>()(
               composeMatrix(creation.position, creation.rotation, creation.scale).invert(),
             );
             const m = delta.multiply(composeMatrix(src.position, src.rotation, src.scale));
-            Object.assign(clone, decomposeMatrix(m));
+            Object.assign(clone, foldBoxScale({ ...clone, ...decomposeMatrix(m) }));
           }
           nextTransforms[newIdStr] = {
             position: [...clone.position],
@@ -755,7 +832,7 @@ export const useScene = create<SceneState>()(
               .clone()
               .multiply(composeMatrix(n.position, n.rotation, n.scale));
             const t = decomposeMatrix(world);
-            nodes[id] = { ...n, position: t.position, rotation: t.rotation, scale: t.scale };
+            nodes[id] = foldBoxScale({ ...n, position: t.position, rotation: t.rotation, scale: t.scale });
           }
           return { project: { ...s.project, nodes } };
         });
@@ -837,7 +914,7 @@ export const useScene = create<SceneState>()(
               if (!child) continue;
               const cm = composeMatrix(child.position, child.rotation, child.scale);
               const t = decomposeMatrix(gm.clone().multiply(cm));
-              nodes[cid] = { ...child, ...t };
+              nodes[cid] = foldBoxScale({ ...child, ...t });
             }
             rootOrder = rootOrder.flatMap((id) => (id === gid ? group.childIds : [id]));
             freed.push(...group.childIds);

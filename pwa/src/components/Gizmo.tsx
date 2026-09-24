@@ -63,6 +63,7 @@ export function Gizmo() {
   const setTransforms = useScene((s) => s.setTransforms);
   const alignMode = useScene((s) => s.alignMode);
   const measureMode = useScene((s) => s.measureMode);
+  const filletMode = useScene((s) => s.filletMode);
   const setDragInfo = useScene((s) => s.setDragInfo);
   const coarse = useCoarsePointer();
 
@@ -103,8 +104,8 @@ export function Gizmo() {
     };
   });
 
-  // Align and measure modes keep the scene free of grabbable gizmos.
-  if (ids.length === 0 || alignMode || measureMode) return null;
+  // Align, measure and edge-rounding keep the scene free of grabbable gizmos.
+  if (ids.length === 0 || alignMode || measureMode || filletMode) return null;
   // On touch each mode gets exactly one grabbable tool, so a fingertip can
   // never land on two at once: Move = arrows, Rotate = rings, Scale = the
   // resize handles (which beat the scale gizmo here — bigger targets, and

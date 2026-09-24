@@ -6,6 +6,8 @@ import type { PrimitiveKind, ShapeNode } from "../types/scene";
 import { newId } from "./id";
 import { decodeMeshGeometry } from "./meshData";
 import { gearGeometry, threadGeometry } from "./generators";
+import { maxFilletRadius, parseEdges } from "./boxEdges";
+import { filletedBox } from "./manifold";
 import {
   extrudeSketchGeometry,
   parsePaths,
@@ -113,12 +115,20 @@ export function buildGeometry(node: ShapeNode): THREE.BufferGeometry | null {
       const w = num(p, "w", 20);
       const d = num(p, "d", 20);
       const h = num(p, "h", 20);
-      // radius rounds every edge; capped at half the smallest side.
-      const radius = Math.min(num(p, "radius", 0), Math.min(w, d, h) / 2 - 0.01);
-      geo =
-        radius > 0.01
-          ? new RoundedBoxGeometry(w, d, h, 4, radius)
-          : new THREE.BoxGeometry(w, d, h);
+      // radius rounds the edges listed in `edges`, or every edge on boxes
+      // saved before edges could be picked one by one. Capped at half the
+      // smallest side.
+      const radius = Math.min(num(p, "radius", 0), maxFilletRadius(w, d, h));
+      const edges = parseEdges(p.edges);
+      if (radius <= 0.01 || edges?.length === 0) {
+        geo = new THREE.BoxGeometry(w, d, h);
+      } else if (edges === null) {
+        geo = new RoundedBoxGeometry(w, d, h, 4, radius);
+      } else {
+        // Sharp until the boolean engine has loaded; the viewport rebuilds
+        // when it arrives.
+        geo = filletedBox([w, d, h], radius, edges) ?? new THREE.BoxGeometry(w, d, h);
+      }
       break;
     }
     case "cylinder": {

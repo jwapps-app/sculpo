@@ -1,7 +1,8 @@
 import { useSyncExternalStore } from "react";
 import * as THREE from "three";
 import { toCreasedNormals } from "three/addons/utils/BufferGeometryUtils.js";
-import type { CrossSection, Manifold, ManifoldToplevel } from "manifold-3d";
+import type { CrossSection, Manifold, ManifoldToplevel, Mat4 } from "manifold-3d";
+import { BOX_EDGES, edgeSign, fullyRoundedCorners, type BoxAxis } from "./boxEdges";
 // Not the npm package's loader: that one builds functions from strings,
 // which the site's Content Security Policy blocks, and the engine would
 // silently never start on a real deployment. See vendor/manifold/README.md.
@@ -133,6 +134,59 @@ export function fromManifold(m: Manifold): THREE.BufferGeometry {
 }
 
 /**
+ * A boolean result is always manifold as the engine counts it, but where
+ * shapes only touch — a ball tangent to a face, coplanar cutter faces — it
+ * can leave two vertices at exactly the same position without joining them.
+ * A slicer joins vertices by position, so it would count the edges there as
+ * shared by three or four faces and call the part non-manifold. This welds
+ * such vertices and rebuilds. Returns a new Manifold for the caller to free,
+ * or null when there is nothing to weld (the common case, and cheap to
+ * establish) or welding would not give a valid solid.
+ */
+function weldCoincident(m: Manifold): Manifold | null {
+  if (!lib) return null;
+  const mesh = m.getMesh();
+  const stride = mesh.numProp;
+  const vp = mesh.vertProperties;
+  const count = vp.length / stride;
+  const seen = new Set<string>();
+  let duplicates = false;
+  for (let i = 0; i < count; i++) {
+    const k = `${vp[i * stride]},${vp[i * stride + 1]},${vp[i * stride + 2]}`;
+    if (seen.has(k)) {
+      duplicates = true;
+      break;
+    }
+    seen.add(k);
+  }
+  if (!duplicates) return null;
+
+  // Every triangle with its own corners, so merge() joins all by position.
+  const tv = mesh.triVerts;
+  const soup = new Float32Array(tv.length * 3);
+  for (let i = 0; i < tv.length; i++) {
+    const v = tv[i] * stride;
+    soup[i * 3] = vp[v];
+    soup[i * 3 + 1] = vp[v + 1];
+    soup[i * 3 + 2] = vp[v + 2];
+  }
+  const welded = new lib.Mesh({
+    numProp: 3,
+    vertProperties: soup,
+    triVerts: Uint32Array.from({ length: tv.length }, (_, i) => i),
+  });
+  welded.merge();
+  try {
+    const out = new lib.Manifold(welded);
+    if (out.status() === "NoError" && !out.isEmpty()) return out;
+    out.delete();
+  } catch {
+    /* not weldable into a solid; keep the original */
+  }
+  return null;
+}
+
+/**
  * Union of the solids minus the union of the holes, as one watertight
  * geometry. Null if any input is not a closed solid, so the caller can fall
  * back rather than lose the shape. Every WASM object is freed before return.
@@ -172,7 +226,9 @@ export function cutGroup(
     const result = h.length ? lib.Manifold.difference([joined, ...h]) : joined;
     if (result !== joined) owned.push(result);
     if (result.status() !== "NoError") return null;
-    return fromManifold(result);
+    const welded = weldCoincident(result);
+    if (welded) owned.push(welded);
+    return fromManifold(welded ?? result);
   } catch (err) {
     console.warn("Manifold boolean failed; falling back", err);
     return null;
@@ -296,4 +352,119 @@ export function isClosedSolid(geo: THREE.BufferGeometry): boolean {
 export function asClosedSolid(geo: THREE.BufferGeometry): THREE.BufferGeometry {
   if (!lib) return geo;
   return cutGroup([geo], []) ?? repairExtrusion(geo) ?? geo;
+}
+
+// ---- Box fillets ------------------------------------------------------------
+
+// Built boxes are cached by size, radius and edge set: the same box is asked
+// for by the viewport, every group containing it, the thumbnail and export.
+const filletCache = new Map<string, THREE.BufferGeometry>();
+const FILLET_CACHE_MAX = 64;
+
+// For each edge axis, the two perpendicular axes in cyclic order, so that
+// mapping 2D (x, y) and extrusion z onto them is a rotation, never a mirror.
+const CYCLIC: Record<BoxAxis, [BoxAxis, BoxAxis]> = { 0: [1, 2], 1: [2, 0], 2: [0, 1] };
+
+/** Column-major matrix sending x to axis p, y to axis q and z to axis a. */
+function axisFrame(p: BoxAxis, q: BoxAxis, a: BoxAxis): Mat4 {
+  const m = new Array(16).fill(0) as number[];
+  m[p] = 1; // column 0: where x goes
+  m[4 + q] = 1; // column 1: where y goes
+  m[8 + a] = 1; // column 2: where z goes
+  m[15] = 1;
+  return m as Mat4;
+}
+
+/**
+ * A box, centered on the origin, with the given edges rounded to radius r.
+ * Each rounded edge is cut by a prism whose cross-section is the corner square
+ * minus a quarter circle; where all three edges at a corner are rounded, a
+ * cube-minus-ball cutter makes the corner spherical, as a fillet would be.
+ * Where only two meet, their fillets intersect in a miter, as they do in CAD.
+ *
+ * Needs the engine; null until it has loaded, so callers show a sharp box
+ * for that moment and rebuild when it arrives.
+ */
+export function filletedBox(
+  size: [number, number, number],
+  r: number,
+  edges: readonly number[],
+): THREE.BufferGeometry | null {
+  if (!lib) return null;
+  const key = `${size.join(",")}|${r}|${edges.join(",")}`;
+  const hit = filletCache.get(key);
+  if (hit) return hit.clone();
+
+  const half = size.map((v) => v / 2) as [number, number, number];
+  // Cutters overshoot the box so no cutter face lies exactly on a box face.
+  const eps = Math.max(0.01, Math.min(...size) * 0.01);
+  // A multiple of four puts polygon vertices exactly at the tangent points
+  // with the flat faces, so the fillet meets them without a step. Finer for
+  // bigger radii, where facets would show.
+  const segments = 4 * Math.min(16, Math.max(4, Math.ceil(r * 2)));
+
+  const owned: (Manifold | CrossSection)[] = [];
+  const keep = <T extends Manifold | CrossSection>(x: T): T => {
+    owned.push(x);
+    return x;
+  };
+  try {
+    const box = keep(lib.Manifold.cube(size, true));
+    const cutters: Manifold[] = [];
+
+    for (const id of edges) {
+      const edge = BOX_EDGES[id];
+      if (!edge) continue;
+      const a = edge.axis;
+      const [p, q] = CYCLIC[a];
+      const sp = edgeSign(edge, p);
+      const sq = edgeSign(edge, q);
+      // The fillet's axis, inset r from both faces.
+      const ip = sp * (half[p] - r);
+      const iq = sq * (half[q] - r);
+      const op = sp * (half[p] + eps);
+      const oq = sq * (half[q] + eps);
+      const square = keep(
+        lib.CrossSection.square([Math.abs(op - ip), Math.abs(oq - iq)]).translate([
+          Math.min(ip, op),
+          Math.min(iq, oq),
+        ]),
+      );
+      const circle = keep(lib.CrossSection.circle(r, segments).translate([ip, iq]));
+      const section = keep(square.subtract(circle));
+      const prism = keep(lib.Manifold.extrude(section, size[a] + 2 * eps, 0, 0, [1, 1], true));
+      cutters.push(keep(prism.transform(axisFrame(p, q, a))));
+    }
+
+    for (const corner of fullyRoundedCorners(edges)) {
+      const center = corner.map((s, i) => s * (half[i] - r)) as [number, number, number];
+      const outer = corner.map((s, i) => s * (half[i] + eps));
+      const lo = center.map((c, i) => Math.min(c, outer[i])) as [number, number, number];
+      const cube = keep(lib.Manifold.cube([r + eps, r + eps, r + eps]).translate(lo));
+      const ball = keep(lib.Manifold.sphere(r, segments).translate(center));
+      cutters.push(keep(cube.subtract(ball)));
+    }
+
+    const result = cutters.length ? keep(lib.Manifold.difference([box, ...cutters])) : box;
+    if (result.status() !== "NoError" || result.isEmpty()) return null;
+    // Ball corners touch the faces tangentially, which is exactly the case
+    // that leaves coincident vertices.
+    const welded = weldCoincident(result);
+    if (welded) keep(welded);
+    const geo = fromManifold(welded ?? result);
+    if (filletCache.size >= FILLET_CACHE_MAX) {
+      const oldest = filletCache.keys().next().value;
+      if (oldest !== undefined) {
+        filletCache.get(oldest)?.dispose();
+        filletCache.delete(oldest);
+      }
+    }
+    filletCache.set(key, geo);
+    return geo.clone();
+  } catch (err) {
+    console.warn("Could not build rounded box", err);
+    return null;
+  } finally {
+    for (const x of owned) x.delete();
+  }
 }
