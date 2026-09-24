@@ -9,12 +9,8 @@ import { composeMatrix, decomposeMatrix } from "../lib/transform";
 import { workplaneNormal, type Workplane } from "../lib/workplane";
 import { sceneApi } from "../lib/sceneApi";
 import { planAlign } from "../lib/align";
-import {
-  DEFAULT_FILLET_RADIUS,
-  formatEdges,
-  maxFilletRadius,
-  roundedEdges,
-} from "../lib/boxEdges";
+import { formatPicks, parsePicks, pickEdges, roundFamily } from "../lib/rounding";
+import { roundingSpec } from "../lib/primitives";
 import { DEFAULT_STEP, type Units } from "../lib/units";
 
 export type TransformMode = "translate" | "rotate" | "scale";
@@ -48,21 +44,53 @@ function collectSubtree(id: string, nodes: Project["nodes"], acc: Set<string>) {
 // gizmo, the Size row, the Scale fields, mirror, ungroup — passes the node
 // through here, which moves the scale into the dimensions. The box looks the
 // same; its rounding stays round. A mirror's sign stays in the scale.
+//
+// Other shapes with rounded edges get the same treatment where their params
+// can say the new size exactly: a cylinder stretched evenly across, a wedge
+// any way. A cylinder squashed into an oval cannot be written as r and h, so
+// it keeps its scale (and its rounding stretches with it).
+const SAME = 1e-6;
+const FOLD: Partial<Record<string, (p: Record<string, number | string>, s: number[]) => Record<string, number> | null>> = {
+  box: (p, [x, y, z]) => ({ w: dim(p, "w", 20) * x, d: dim(p, "d", 20) * y, h: dim(p, "h", 20) * z }),
+  wedge: (p, [x, y, z]) => ({ w: dim(p, "w", 20) * x, d: dim(p, "d", 20) * y, h: dim(p, "h", 20) * z }),
+  roof: (p, [x, y, z]) => ({ w: dim(p, "w", 20) * x, d: dim(p, "d", 20) * y, h: dim(p, "h", 20) * z }),
+  pyramid: (p, [x, y, z]) => (Math.abs(x - y) > SAME ? null : { w: dim(p, "w", 20) * x, h: dim(p, "h", 20) * z }),
+  cylinder: (p, [x, y, z]) => (Math.abs(x - y) > SAME ? null : { r: dim(p, "r", 10) * x, h: dim(p, "h", 20) * z }),
+  cone: (p, [x, y, z]) => (Math.abs(x - y) > SAME ? null : { r: dim(p, "r", 10) * x, h: dim(p, "h", 20) * z }),
+  polygon: (p, [x, y, z]) => (Math.abs(x - y) > SAME ? null : { r: dim(p, "r", 10) * x, h: dim(p, "h", 20) * z }),
+  octagon: (p, [x, y, z]) => (Math.abs(x - y) > SAME ? null : { r: dim(p, "r", 10) * x, h: dim(p, "h", 20) * z }),
+  tube: (p, [x, y, z]) =>
+    Math.abs(x - y) > SAME
+      ? null
+      : { r: dim(p, "r", 10) * x, wall: dim(p, "wall", 3) * x, h: dim(p, "h", 20) * z },
+  star: (p, [x, y, z]) =>
+    Math.abs(x - y) > SAME
+      ? null
+      : { r1: dim(p, "r1", 10) * x, r2: dim(p, "r2", 4) * x, h: dim(p, "h", 5) * z },
+  text: (p, [x, y, z]) =>
+    Math.abs(x - y) > SAME ? null : { size: dim(p, "size", 10) * x, depth: dim(p, "depth", 5) * z },
+  hemisphere: (p, [x, y, z]) =>
+    Math.abs(x - y) > SAME || Math.abs(x - z) > SAME ? null : { r: dim(p, "r", 10) * x },
+};
+
+function dim(p: Record<string, number | string>, key: string, fallback: number): number {
+  const v = p[key];
+  return typeof v === "number" && Number.isFinite(v) ? v : fallback;
+}
+
 function foldBoxScale<T extends SceneNode>(node: T): T {
-  if (isGroup(node) || node.kind !== "box") return node;
+  if (isGroup(node)) return node;
+  const fold = FOLD[node.kind];
+  if (!fold) return node;
+  // Boxes always size by their params; others only once they are rounded.
+  if (node.kind !== "box" && parsePicks(node.kind, node.params).size === 0) return node;
   const mags = node.scale.map(Math.abs);
-  if (mags.every((m) => Math.abs(m - 1) < 1e-6)) return node;
-  const p = node.params;
-  const dim = (key: string, fallback: number) =>
-    typeof p[key] === "number" && Number.isFinite(p[key]) ? (p[key] as number) : fallback;
+  if (mags.every((m) => Math.abs(m - 1) < SAME)) return node;
+  const sized = fold(node.params, mags);
+  if (!sized) return node;
   return {
     ...node,
-    params: {
-      ...p,
-      w: dim("w", 20) * mags[0],
-      d: dim("d", 20) * mags[1],
-      h: dim("h", 20) * mags[2],
-    },
+    params: { ...node.params, ...sized },
     scale: node.scale.map((v) => (v < 0 ? -1 : 1)) as Vec3,
   };
 }
@@ -146,8 +174,10 @@ interface SceneState {
   // Shapes the others align to while align mode is on. Empty means the whole
   // selection is the reference.
   alignAnchors: string[];
-  // Click-to-round: edges of the selected box become clickable.
+  // The rounding tool: every roundable line in the scene becomes clickable.
   filletMode: boolean;
+  // Radius the rounding tool gives the next edge clicked, in mm.
+  filletRadius: number;
   measureMode: boolean;
   // Ruler datum on the workplane: while set, the selection shows persistent
   // dimensions and its offset from this origin. null = ruler off.
@@ -168,9 +198,14 @@ interface SceneState {
   // Additive (shift): toggle it in the anchor set.
   toggleAlignAnchor: (id: string, additive: boolean) => void;
   setFilletMode: (on: boolean) => void;
-  // Rounds the edge if it is square, squares it if it is rounded.
-  toggleBoxEdge: (id: string, edge: number) => void;
-  setBoxEdges: (id: string, edges: number[]) => void;
+  setFilletRadius: (mm: number) => void;
+  // Rounds a shape's edge at the tool's radius if it is square, squares it
+  // if it is rounded. Works on shapes inside groups too.
+  toggleEdge: (id: string, edge: string) => void;
+  // Sets every rounded edge on the shape to one radius.
+  setEdgesRadius: (id: string, mm: number) => void;
+  // Rounds every edge on the shape (at the tool's radius), or none.
+  setAllEdges: (id: string, on: boolean) => void;
   setMeasureMode: (on: boolean) => void;
   toggleRuler: () => void;
   setRulerOrigin: (origin: [number, number] | null) => void;
@@ -256,6 +291,10 @@ export const useScene = create<SceneState>()(
       alignMode: false,
       alignAnchors: [],
       filletMode: false,
+      filletRadius: (() => {
+        const v = Number(localStorage.getItem("fillet-radius"));
+        return Number.isFinite(v) && v > 0 ? v : 2;
+      })(),
       measureMode: false,
       rulerOrigin: null,
       rulerPlacing: false,
@@ -357,31 +396,6 @@ export const useScene = create<SceneState>()(
         }),
       setFilletMode: (on) =>
         set({ filletMode: on, ...(on ? { alignMode: false, measureMode: false } : {}) }),
-      toggleBoxEdge: (id, edge) => {
-        const node = get().project.nodes[id];
-        if (!node || isGroup(node) || node.kind !== "box" || node.locked) return;
-        const current = roundedEdges(node.params);
-        const next = current.includes(edge)
-          ? current.filter((e) => e !== edge)
-          : [...current, edge];
-        get().setBoxEdges(id, next);
-      },
-      setBoxEdges: (id, edges) => {
-        const node = get().project.nodes[id];
-        if (!node || isGroup(node) || node.kind !== "box" || node.locked) return;
-        const box = foldBoxScale(node);
-        const p = box.params;
-        const params: Record<string, number | string> = { ...p, edges: formatEdges(edges) };
-        // The first edge picked on a square box needs a radius to show.
-        const radius = typeof p.radius === "number" ? p.radius : 0;
-        if (edges.length && radius <= 0.01) {
-          const size = (k: string) => (typeof p[k] === "number" ? (p[k] as number) : 20);
-          params.radius = Math.min(DEFAULT_FILLET_RADIUS, maxFilletRadius(size("w"), size("d"), size("h")));
-        }
-        set((s) => ({
-          project: { ...s.project, nodes: { ...s.project.nodes, [id]: { ...box, params } } },
-        }));
-      },
       toggleAlignAnchor: (id, additive) =>
         set((s) => {
           const has = s.alignAnchors.includes(id);
@@ -393,6 +407,54 @@ export const useScene = create<SceneState>()(
           const onlyThis = has && s.alignAnchors.length === 1;
           return { alignAnchors: onlyThis ? [] : [id] };
         }),
+      setFilletRadius: (mm) => {
+        const v = Math.max(0.05, mm);
+        localStorage.setItem("fillet-radius", String(v));
+        set({ filletRadius: v });
+      },
+      toggleEdge: (id, edge) => {
+        const node = get().project.nodes[id];
+        if (!node || isGroup(node) || node.locked || !roundFamily(node.kind)) return;
+        // Measure the edge on the shape's true size before it is rounded.
+        const shape = foldBoxScale(node);
+        const picks = parsePicks(shape.kind, shape.params);
+        if (picks.has(edge)) picks.delete(edge);
+        else picks.set(edge, get().filletRadius);
+        const params = { ...shape.params, edges: formatPicks(picks) };
+        set((s) => ({
+          project: {
+            ...s.project,
+            nodes: { ...s.project.nodes, [id]: foldBoxScale({ ...shape, params }) },
+          },
+        }));
+      },
+      setEdgesRadius: (id, mm) => {
+        const node = get().project.nodes[id];
+        if (!node || isGroup(node) || node.locked || !roundFamily(node.kind)) return;
+        const picks = parsePicks(node.kind, node.params);
+        for (const key of picks.keys()) picks.set(key, Math.max(0.05, mm));
+        const params: Record<string, number | string> = { ...node.params, edges: formatPicks(picks) };
+        if (node.kind === "box") params.radius = Math.max(0.05, mm);
+        set((s) => ({
+          project: { ...s.project, nodes: { ...s.project.nodes, [id]: { ...node, params } } },
+        }));
+      },
+      setAllEdges: (id, on) => {
+        const node = get().project.nodes[id];
+        if (!node || isGroup(node) || node.locked || !roundFamily(node.kind)) return;
+        const shape = foldBoxScale(node);
+        const spec = roundingSpec(shape);
+        if (!spec) return;
+        const r = get().filletRadius;
+        const picks = new Map(on ? pickEdges(spec).map((e) => [e.id, r] as const) : []);
+        const params = { ...shape.params, edges: formatPicks(picks) };
+        set((s) => ({
+          project: {
+            ...s.project,
+            nodes: { ...s.project.nodes, [id]: foldBoxScale({ ...shape, params }) },
+          },
+        }));
+      },
       setMeasureMode: (on) =>
         set({
           measureMode: on,

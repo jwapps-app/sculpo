@@ -36,12 +36,9 @@ export function extrudeSketchGeometry(points: Pt[], depth: number): THREE.Buffer
   return geo;
 }
 
-export function revolveSketchGeometry(
-  points: Pt[],
-  segments: number,
-): THREE.BufferGeometry | null {
+/** The revolve profile as it is lathed: CCW, radii clamped non-negative. */
+export function revolveLoop(points: Pt[]): Pt[] | null {
   if (points.length < 3) return null;
-  // Closed CCW loop, radii clamped non-negative, lathed about Z.
   const pts = points.map(([x, y]) => [Math.max(0, x), y] as Pt);
   let area = 0;
   for (let i = 0; i < pts.length; i++) {
@@ -49,7 +46,17 @@ export function revolveSketchGeometry(
     const [x2, y2] = pts[(i + 1) % pts.length];
     area += x1 * y2 - x2 * y1;
   }
-  const loop = area < 0 ? [...pts].reverse() : [...pts];
+  return area < 0 ? [...pts].reverse() : [...pts];
+}
+
+export function revolveSketchGeometry(
+  points: Pt[],
+  segments: number,
+): THREE.BufferGeometry | null {
+  // Closed CCW loop, radii clamped non-negative, lathed about Z.
+  const open = revolveLoop(points);
+  if (!open) return null;
+  const loop = [...open];
   loop.push(loop[0]);
   const lathe = new THREE.LatheGeometry(
     loop.map(([x, y]) => new THREE.Vector2(x, y)),
@@ -67,6 +74,15 @@ export function scribbleGeometry(
   brush: number,
   depth: number,
 ): THREE.BufferGeometry | null {
+  const shapes = scribbleShapes(paths, brush);
+  if (!shapes) return null;
+  const geo = new THREE.ExtrudeGeometry(shapes, { depth, bevelEnabled: false, curveSegments: 4 });
+  geo.center();
+  return geo;
+}
+
+/** The ink outline of the strokes, traced from a raster, before extrusion. */
+export function scribbleShapes(paths: Pt[][], brush: number): THREE.Shape[] | null {
   const flat = paths.flat();
   if (flat.length === 0) return null;
   const r = Math.max(0.5, brush) / 2;
@@ -135,8 +151,5 @@ export function scribbleGeometry(
     }
     shapes.push(shape);
   }
-  if (shapes.length === 0) return null;
-  const geo = new THREE.ExtrudeGeometry(shapes, { depth, bevelEnabled: false, curveSegments: 4 });
-  geo.center();
-  return geo;
+  return shapes.length ? shapes : null;
 }

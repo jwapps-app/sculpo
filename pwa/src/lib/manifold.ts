@@ -2,7 +2,7 @@ import { useSyncExternalStore } from "react";
 import * as THREE from "three";
 import { toCreasedNormals } from "three/addons/utils/BufferGeometryUtils.js";
 import type { CrossSection, Manifold, ManifoldToplevel, Mat4 } from "manifold-3d";
-import { BOX_EDGES, edgeSign, fullyRoundedCorners, type BoxAxis } from "./boxEdges";
+import { BOX_EDGES, edgeAtCorner, edgeSign, fullyRoundedCorners, type BoxAxis } from "./boxEdges";
 // Not the npm package's loader: that one builds functions from strings,
 // which the site's Content Security Policy blocks, and the engine would
 // silently never start on a real deployment. See vendor/manifold/README.md.
@@ -44,6 +44,11 @@ export const manifoldReady: Promise<boolean> = Module({ locateFile: () => wasmUr
 
 export function manifoldLoaded(): boolean {
   return lib !== null;
+}
+
+/** The loaded engine, for geometry builders that drive it directly. */
+export function manifoldLib(): ManifoldToplevel | null {
+  return lib;
 }
 
 export function engineStatus(): EngineStatus {
@@ -143,7 +148,7 @@ export function fromManifold(m: Manifold): THREE.BufferGeometry {
  * or null when there is nothing to weld (the common case, and cheap to
  * establish) or welding would not give a valid solid.
  */
-function weldCoincident(m: Manifold): Manifold | null {
+export function weldCoincident(m: Manifold): Manifold | null {
   if (!lib) return null;
   const mesh = m.getMesh();
   const stride = mesh.numProp;
@@ -387,11 +392,12 @@ function axisFrame(p: BoxAxis, q: BoxAxis, a: BoxAxis): Mat4 {
  */
 export function filletedBox(
   size: [number, number, number],
-  r: number,
-  edges: readonly number[],
+  rounded: readonly { id: number; r: number }[],
 ): THREE.BufferGeometry | null {
   if (!lib) return null;
-  const key = `${size.join(",")}|${r}|${edges.join(",")}`;
+  const radiusOf = new Map(rounded.map((e) => [e.id, e.r]));
+  const edges = [...radiusOf.keys()].sort((a, b) => a - b);
+  const key = `${size.join(",")}|${edges.map((id) => `${id}@${radiusOf.get(id)}`).join(",")}`;
   const hit = filletCache.get(key);
   if (hit) return hit.clone();
 
@@ -401,7 +407,7 @@ export function filletedBox(
   // A multiple of four puts polygon vertices exactly at the tangent points
   // with the flat faces, so the fillet meets them without a step. Finer for
   // bigger radii, where facets would show.
-  const segments = 4 * Math.min(16, Math.max(4, Math.ceil(r * 2)));
+  const segmentsFor = (r: number) => 4 * Math.min(16, Math.max(4, Math.ceil(r * 2)));
 
   const owned: (Manifold | CrossSection)[] = [];
   const keep = <T extends Manifold | CrossSection>(x: T): T => {
@@ -414,7 +420,9 @@ export function filletedBox(
 
     for (const id of edges) {
       const edge = BOX_EDGES[id];
-      if (!edge) continue;
+      const r = radiusOf.get(id) ?? 0;
+      if (!edge || r <= 0.01) continue;
+      const segments = segmentsFor(r);
       const a = edge.axis;
       const [p, q] = CYCLIC[a];
       const sp = edgeSign(edge, p);
@@ -437,6 +445,12 @@ export function filletedBox(
     }
 
     for (const corner of fullyRoundedCorners(edges)) {
+      // A ball corner needs one radius; where the three differ, the fillets
+      // simply meet as they fall.
+      const radii = ([0, 1, 2] as BoxAxis[]).map((a) => radiusOf.get(edgeAtCorner(a, corner)) ?? 0);
+      if (Math.max(...radii) - Math.min(...radii) > 1e-6) continue;
+      const r = radii[0];
+      const segments = segmentsFor(r);
       const center = corner.map((s, i) => s * (half[i] - r)) as [number, number, number];
       const outer = corner.map((s, i) => s * (half[i] + eps));
       const lo = center.map((c, i) => Math.min(c, outer[i])) as [number, number, number];

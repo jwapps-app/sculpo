@@ -3,8 +3,8 @@ import * as THREE from "three";
 import { Link2, Unlink2 } from "lucide-react";
 import { AXIS_COLORS } from "../constants/ui";
 import { sceneApi } from "../lib/sceneApi";
-import { FONT_NAMES } from "../lib/primitives";
-import { ALL_BOX_EDGES, formatEdges, maxFilletRadius, roundedEdges } from "../lib/boxEdges";
+import { FONT_NAMES, roundingSpec } from "../lib/primitives";
+import { parsePicks, pickEdges } from "../lib/rounding";
 import {
   COUNT_PARAMS,
   fromDisplay as mmFromDisplay,
@@ -267,26 +267,34 @@ const HIDDEN_PARAMS = new Set(["pos", "idx", "profile", "paths", "edges"]);
 // Params where 0 is meaningful rather than degenerate.
 const ZEROABLE_PARAMS = new Set(["radius", "bevel"]);
 
-/** Which edges of a box are rounded, how much, and the tool to pick them. */
-function BoxRounding({ node }: { node: ShapeNode }) {
+/** How many of a shape's edges are rounded, their radius, and the tool. */
+function ShapeRounding({ node }: { node: ShapeNode }) {
   const units = useScene((s) => s.units);
-  const updateShape = useScene((s) => s.updateShape);
   const filletMode = useScene((s) => s.filletMode);
   const setFilletMode = useScene((s) => s.setFilletMode);
-  const setBoxEdges = useScene((s) => s.setBoxEdges);
-  const p = node.params;
-  const edges = roundedEdges(p);
-  const size = (k: string) => (typeof p[k] === "number" ? (p[k] as number) : 20);
-  const max = maxFilletRadius(size("w"), size("d"), size("h"));
-  const radius = typeof p.radius === "number" ? p.radius : 0;
-  const shown = Number(mmToDisplay(Math.min(radius, max), units).toFixed(3));
+  const setAllEdges = useScene((s) => s.setAllEdges);
+  const setEdgesRadius = useScene((s) => s.setEdgesRadius);
+  const spec = roundingSpec(node);
+  const [draft, setDraft] = useState<string | null>(null);
+  if (!spec) return null;
+  const total = pickEdges(spec).length;
+  const picks = parsePicks(node.kind, node.params);
+  const radii = [...picks.values()];
+  const same = radii.length > 0 && radii.every((r) => Math.abs(r - radii[0]) < 1e-6);
+  const shown = same ? String(Number(mmToDisplay(radii[0], units).toFixed(3))) : "";
   const count =
-    edges.length === 0
+    picks.size === 0
       ? "No edges rounded"
-      : edges.length === 12
-        ? "All 12 edges"
-        : `${edges.length} of 12 edges`;
+      : picks.size >= total
+        ? `All ${total} edges`
+        : `${picks.size} of ${total} edges`;
   const small = "rounded border border-neutral-300 px-1.5 py-0.5 text-xs hover:bg-neutral-100";
+  const commit = () => {
+    if (draft === null) return;
+    const v = Number(draft);
+    setDraft(null);
+    if (Number.isFinite(v) && v > 0) setEdgesRadius(node.id, mmFromDisplay(v, units));
+  };
 
   return (
     <div className="space-y-1.5">
@@ -295,52 +303,50 @@ function BoxRounding({ node }: { node: ShapeNode }) {
       </div>
       <button
         onClick={() => setFilletMode(!filletMode)}
-        disabled={!!node.locked}
         className={`w-full rounded border px-2 py-1 text-xs ${
           filletMode
             ? "border-neutral-700 bg-neutral-800 text-white"
             : "border-neutral-300 hover:bg-neutral-100"
         }`}
       >
-        {filletMode ? "Done picking edges" : "Pick edges to round (E)"}
+        {filletMode ? "Done rounding" : "Round edges (E)"}
       </button>
       {filletMode && (
         <p className="text-[11px] leading-snug text-neutral-500">
-          Click an edge on the box to round it. Click a rounded edge to make it square again.
+          Click any edge in the scene to round it. Click a rounded edge to make it square again.
         </p>
       )}
       <div className="flex items-center justify-between gap-2 text-sm">
         <span className="text-neutral-500">{count}</span>
         <span className="flex gap-1">
-          <button className={small} onClick={() => setBoxEdges(node.id, ALL_BOX_EDGES)}>
+          <button className={small} disabled={!!node.locked} onClick={() => setAllEdges(node.id, true)}>
             All
           </button>
-          <button className={small} onClick={() => setBoxEdges(node.id, [])}>
+          <button className={small} disabled={!!node.locked} onClick={() => setAllEdges(node.id, false)}>
             None
           </button>
         </span>
       </div>
-      <label className="flex items-center justify-between gap-2 text-sm">
-        <span className="text-neutral-500">radius</span>
-        <input
-          type="number"
-          min={0}
-          value={shown}
-          step={units === "mm" ? 0.5 : 0.0625}
-          title={`Up to ${Number(mmToDisplay(max, units).toFixed(3))} ${units} on this box`}
-          onChange={(e) => {
-            const v = Number(e.target.value);
-            if (!Number.isFinite(v) || v < 0) return;
-            const mm = Math.min(mmFromDisplay(v, units), max);
-            // A radius typed with nothing picked rounds every edge, the
-            // quick way to a fully rounded box.
-            const next: Record<string, number | string> = { ...p, radius: mm };
-            if (mm > 0.01 && edges.length === 0) next.edges = formatEdges(ALL_BOX_EDGES);
-            updateShape(node.id, { params: next });
-          }}
-          className="w-20 rounded border border-neutral-300 px-1.5 py-0.5 text-right text-sm"
-        />
-      </label>
+      {picks.size > 0 && (
+        <label className="flex items-center justify-between gap-2 text-sm">
+          <span className="text-neutral-500">radius</span>
+          <input
+            type="number"
+            min={0}
+            step={units === "mm" ? 0.5 : 0.0625}
+            value={draft ?? shown}
+            placeholder="mixed"
+            title="Sets every rounded edge on this shape"
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commit}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+              if (e.key === "Escape") setDraft(null);
+            }}
+            className="w-20 rounded border border-neutral-300 px-1.5 py-0.5 text-right text-sm"
+          />
+        </label>
+      )}
     </div>
   );
 }
@@ -348,8 +354,9 @@ function BoxRounding({ node }: { node: ShapeNode }) {
 function ShapeParams({ node }: { node: ShapeNode }) {
   const updateShape = useScene((s) => s.updateShape);
   const units = useScene((s) => s.units);
-  // A box's radius has its own section, alongside the edges it applies to.
-  const ownSection = (k: string) => node.kind === "box" && k === "radius";
+  // Rounding radii live in the Rounded edges section, per edge.
+  const ownSection = (k: string) =>
+    (node.kind === "box" && k === "radius") || (node.kind === "cylinder" && k === "bevel");
   const numericKeys = Object.keys(node.params).filter(
     (k) => typeof node.params[k] === "number" && !HIDDEN_PARAMS.has(k) && !ownSection(k),
   );
@@ -731,7 +738,7 @@ export function Inspector() {
         onCommit={(v) => updateShape(node.id, { scale: v })}
       />
       <ShapeParams node={node} />
-      {node.kind === "box" && <BoxRounding node={node} />}
+      <ShapeRounding node={node} />
       {["sketch", "revolve", "scribble"].includes(node.kind) && (
         <button
           onClick={() => useScene.getState().editSketch(node.id)}

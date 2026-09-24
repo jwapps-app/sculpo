@@ -21,6 +21,7 @@ import { Gizmo } from "./Gizmo";
 import { ResizeHandles } from "./ResizeHandles";
 import { AlignDots } from "./AlignDots";
 import { FilletEdges } from "./FilletEdges";
+import { FilletBar } from "./FilletBar";
 import { MeasureOverlay } from "./MeasureOverlay";
 import { RulerOverlay } from "./RulerOverlay";
 import { ViewCube } from "./ViewCube";
@@ -575,10 +576,9 @@ export function Viewport() {
             s.setAlignMode(false);
             return;
           }
-          if (s.filletMode) {
-            s.setFilletMode(false);
-            return;
-          }
+          // Rounding: a click that misses every line is a near miss, not a
+          // request to stop. The tool ends from its bar, the toolbar, E or Esc.
+          if (s.filletMode) return;
           if (s.measureMode) return; // clicks are measurement points
           clearSelection();
         }}
@@ -695,6 +695,7 @@ export function Viewport() {
           Cruise: drag a shape along other surfaces — C or Esc to exit
         </div>
       )}
+      <FilletBar />
       {editingGroup && (
         <div className="absolute bottom-2 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded bg-neutral-800/90 px-3 py-1 text-xs text-white">
           Editing group

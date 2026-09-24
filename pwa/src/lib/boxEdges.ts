@@ -1,6 +1,7 @@
-// The twelve edges of a box, numbered once and shared by everything that
-// rounds them: the geometry builder, the click-to-round overlay, and the
-// inspector. A box is centered on its origin, w along x, d along y, h along z.
+// The twelve edges of a box, numbered once and shared by the rounded-box
+// builder and the rounding tool. A box is centered on its origin, w along x,
+// d along y, h along z. Which edges are rounded is stored with the other
+// shapes' in the `edges` param (see rounding/picks.ts).
 //
 // Edge id = axis * 4 + (first other axis on its + side ? 1 : 0)
 //                    + (second other axis on its + side ? 2 : 0),
@@ -30,8 +31,6 @@ export const BOX_EDGES: BoxEdge[] = ([0, 1, 2] as BoxAxis[]).flatMap((axis) =>
     signs: [k & 1 ? 1 : -1, k & 2 ? 1 : -1] as [1 | -1, 1 | -1],
   })),
 );
-
-export const ALL_BOX_EDGES: number[] = BOX_EDGES.map((e) => e.id);
 
 /** Where the edge sits on one perpendicular axis: +1, -1, or 0 for its own axis. */
 export function edgeSign(edge: BoxEdge, axis: BoxAxis): number {
@@ -79,40 +78,7 @@ export function edgeEndpoints(
   return [a, b];
 }
 
-/**
- * Reads the `edges` param: null when absent, which means the box predates
- * per-edge rounding and its radius applies to every edge. An empty string
- * means no edge is rounded.
- */
-export function parseEdges(value: unknown): number[] | null {
-  if (typeof value !== "string") return null;
-  // Number("") is 0, so blanks must go before the conversion or an empty
-  // list would read as edge 0.
-  const ids = value
-    .split(",")
-    .map((s) => s.trim())
-    .filter((s) => s !== "")
-    .map(Number)
-    .filter((n) => Number.isInteger(n) && n >= 0 && n < 12);
-  return [...new Set(ids)].sort((x, y) => x - y);
-}
-
-export function formatEdges(ids: readonly number[]): string {
-  return [...new Set(ids)].sort((x, y) => x - y).join(",");
-}
-
-/** The edges a box's radius currently applies to. */
-export function roundedEdges(params: Record<string, number | string>): number[] {
-  const radius = typeof params.radius === "number" ? params.radius : 0;
-  const explicit = parseEdges(params.edges);
-  if (explicit) return explicit;
-  return radius > 0.01 ? ALL_BOX_EDGES : [];
-}
-
 /** Largest radius a box of this size can take without faces vanishing. */
 export function maxFilletRadius(w: number, d: number, h: number): number {
   return Math.max(0, Math.min(w, d, h) / 2 - 0.01);
 }
-
-/** Radius given to the first edge picked on a box that had none. */
-export const DEFAULT_FILLET_RADIUS = 2;

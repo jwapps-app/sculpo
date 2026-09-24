@@ -118,12 +118,29 @@ export function threadGeometry(params: {
  * Involute spur gear: the real tooth curve, so printed gears actually mesh.
  * Standard proportions, 20° pressure angle.
  */
-export function gearGeometry(params: {
+export interface GearParams {
   teeth: number;
   module: number;
   thickness: number;
   bore: number;
-}): THREE.BufferGeometry {
+}
+
+export function gearGeometry(params: GearParams): THREE.BufferGeometry {
+  const { shape, thickness } = gearShape(params);
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth: thickness,
+    bevelEnabled: false,
+    curveSegments: GEAR_CURVE_SEGMENTS,
+  });
+  geo.center();
+  return geo;
+}
+
+/** Curve resolution the gear's bore is traced at; the outline rounding reuses it. */
+export const GEAR_CURVE_SEGMENTS = 8;
+
+/** The gear's outline, bore included, before it is extruded. */
+export function gearShape(params: GearParams): { shape: THREE.Shape; thickness: number } {
   const teeth = Math.max(6, Math.round(params.teeth));
   const m = params.module;
   const thickness = params.thickness;
@@ -183,11 +200,5 @@ export function gearGeometry(params: {
     hole.absarc(0, 0, bore, 0, Math.PI * 2, true);
     shape.holes.push(hole);
   }
-  const geo = new THREE.ExtrudeGeometry(shape, {
-    depth: thickness,
-    bevelEnabled: false,
-    curveSegments: 8,
-  });
-  geo.center();
-  return geo;
+  return { shape, thickness };
 }

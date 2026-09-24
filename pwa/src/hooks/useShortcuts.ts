@@ -92,13 +92,10 @@ export function useShortcuts() {
         case "m":
           s.setMeasureMode(!s.measureMode);
           break;
-        case "e": {
-          // Round edges: needs exactly one box selected.
-          const only = s.selection.length === 1 ? s.project.nodes[s.selection[0]] : undefined;
-          if (s.filletMode) s.setFilletMode(false);
-          else if (only && !isGroup(only) && only.kind === "box") s.setFilletMode(true);
+        case "e":
+          // Round edges: click any edge line in the scene.
+          s.setFilletMode(!s.filletMode);
           break;
-        }
         case "d":
           s.dropSelectedToWorkplane();
           break;

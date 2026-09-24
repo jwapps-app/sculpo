@@ -52,6 +52,13 @@ textarea {
     row-gap: 4px;
   }
 
+  /* Touch buttons are wide enough to read as separate; the dividers between
+     groups can be tighter, which keeps a 12.9" iPad's toolbar on one row. */
+  header .toolbar-divider {
+    margin-left: 2px;
+    margin-right: 2px;
+  }
+
   header button,
   header select {
     min-width: 40px;

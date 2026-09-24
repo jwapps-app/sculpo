@@ -19,8 +19,13 @@ network unplugged.
 **Model.** Sixteen primitives — box, cylinder, sphere, hemisphere, cone,
 torus, tube, wedge, roof, pyramid, polygon, octagon, star, gear, thread, and
 3D text — placed by click, snapped against neighbours as you go. Move, rotate
-and scale by gizmo or by typing exact numbers. Round a box's edges one at a
-time: turn on edge picking and click the edges you want filleted.
+and scale by gizmo or by typing exact numbers.
+
+**Round.** Pick the rounding tool and click any edge in the scene to fillet
+it; click again to square it. Each edge keeps its own radius. It works on
+every shape with edges, and on the parts inside a group, so a pocket's inner
+corners or a grouped plate's rim can be rounded after the fact; the cut is
+redone around them.
 
 **Cut.** Any shape can be a *hole* instead of a solid. Group it with a solid
 and the boolean runs — subtract a cylinder to drill, a box to notch. Groups

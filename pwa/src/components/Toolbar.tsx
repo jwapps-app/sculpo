@@ -28,6 +28,7 @@ import {
   EyeOff,
   Ungroup as UngroupIcon,
   TriangleAlert,
+  Radius,
 } from "lucide-react";
 import { APP_NAME } from "../constants/branding";
 import { useCoarsePointer } from "../lib/pointer";
@@ -100,7 +101,7 @@ function IconButton({
 }
 
 function Divider() {
-  return <div className="mx-1.5 h-5 w-px bg-neutral-200" />;
+  return <div className="toolbar-divider mx-1.5 h-5 w-px bg-neutral-200" />;
 }
 
 const AXES = ["X", "Y", "Z"] as const;
@@ -165,6 +166,8 @@ export function Toolbar() {
   const ungroupSelected = useScene((s) => s.ungroupSelected);
   const alignMode = useScene((s) => s.alignMode);
   const setAlignMode = useScene((s) => s.setAlignMode);
+  const filletMode = useScene((s) => s.filletMode);
+  const setFilletMode = useScene((s) => s.setFilletMode);
   const mirrorSelected = useScene((s) => s.mirrorSelected);
   const toggleLockSelected = useScene((s) => s.toggleLockSelected);
   const hideSelected = useScene((s) => s.hideSelected);
@@ -413,6 +416,12 @@ export function Toolbar() {
         disabled={selection.length < 2 && !alignMode}
         active={alignMode}
         label="Align (L) — click a shape to align to it, then a colored dot"
+      />
+      <IconButton
+        icon={Radius}
+        onClick={() => setFilletMode(!filletMode)}
+        active={filletMode}
+        label="Round edges (E) — click any edge to round it"
       />
 
       <div className="relative">

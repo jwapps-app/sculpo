@@ -2,7 +2,6 @@ import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import type { ThreeEvent } from "@react-three/fiber";
 import type { ShapeNode } from "../types/scene";
-import { isGroup } from "../types/scene";
 import { buildGeometry } from "../lib/primitives";
 import { useManifoldLoaded } from "../lib/manifold";
 import { workplaneFromHit } from "../lib/workplane";
@@ -12,8 +11,12 @@ import { useScene } from "../state/store";
 // Shared by shapes and groups: while the workplane tool is armed, a click on
 // any face re-anchors the workplane instead of selecting.
 export function handleMeshClick(e: ThreeEvent<MouseEvent>, nodeId: string) {
-  e.stopPropagation();
   const s = useScene.getState();
+  // Rounding edges: faces are not targets, and the click must travel on to
+  // the edge line it may also have landed on — the line and the face at an
+  // edge are the same distance away, and either may be hit first.
+  if (s.filletMode) return;
+  e.stopPropagation();
   // A placement commit on top of this mesh also produces a click here; in
   // measure mode, clicks are measurement points, not selection.
   if (s.placing || s.measureMode || performance.now() - gizmoState.lastInteractionEnd < 300)
@@ -25,16 +28,6 @@ export function handleMeshClick(e: ThreeEvent<MouseEvent>, nodeId: string) {
         .transformDirection(e.object.matrixWorld);
       s.setWorkplane(workplaneFromHit(e.point, normal));
     }
-    return;
-  }
-  if (s.filletMode) {
-    // Rounding edges: the box's faces are not targets (its edges are, drawn
-    // on top). Clicking another box moves the tool to it; anything else
-    // ends the tool and selects as usual.
-    if (s.selection.includes(nodeId)) return;
-    const clicked = s.project.nodes[nodeId];
-    if (!clicked || isGroup(clicked) || clicked.kind !== "box") s.setFilletMode(false);
-    s.select(nodeId, false);
     return;
   }
   if (s.alignMode) {
