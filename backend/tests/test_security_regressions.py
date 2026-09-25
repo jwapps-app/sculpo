@@ -339,7 +339,8 @@ async def test_login_throttle_table_is_bounded(client):
             db.add(LoginFailure(key=f"spray-{i}|1.2.3.4", at=stale))
         await db.commit()
 
-    await throttle.record_fail("fresh|1.2.3.4")
+    async with SessionLocal() as db:
+        await throttle.record_fail(db, "fresh|1.2.3.4")
 
     async with SessionLocal() as db:
         n = await db.scalar(select(func.count()).select_from(LoginFailure))
@@ -350,7 +351,7 @@ async def test_throttle_is_per_address_so_strangers_cannot_lock_you_out(client):
     """Five bad guesses at your username from one address must not stop you
     signing in from another."""
     await client.post("/api/v1/auth/register", json=CREDS)
-    attacker = {"CF-Connecting-IP": "203.0.113.9"}
+    attacker = {"X-Real-IP": "203.0.113.9"}
     for _ in range(5):
         await client.post(
             "/api/v1/auth/login",
@@ -362,7 +363,7 @@ async def test_throttle_is_per_address_so_strangers_cannot_lock_you_out(client):
     assert r.status_code == 429
     # ...and the real owner, elsewhere, is not.
     r = await client.post(
-        "/api/v1/auth/login", json=CREDS, headers={"CF-Connecting-IP": "198.51.100.7"}
+        "/api/v1/auth/login", json=CREDS, headers={"X-Real-IP": "198.51.100.7"}
     )
     assert r.status_code == 200
 
@@ -378,7 +379,8 @@ async def test_throttle_survives_a_rolled_back_request(client):
     await client.post("/api/v1/auth/login", json={"username": "ghost", "password": "wrong-pass-1"})
     async with SessionLocal() as db:
         n = await db.scalar(select(func.count()).select_from(LoginFailure))
-    assert n == 1
+    # One row per budget: the username-and-address one, and the per-username one.
+    assert n == 2
 
 
 async def test_chunked_body_over_the_cap_is_refused(client):
@@ -508,3 +510,104 @@ async def test_thumbnail_write_does_not_count_as_an_edit(client):
     after = (await client.get("/api/v1/projects", headers=h)).json()[0]
     assert instant(after["updated_at"]) == instant(before)
     assert after["thumbnail_at"] is not None
+
+
+async def test_client_sent_forwarding_headers_do_not_get_a_fresh_throttle_bucket(client):
+    """nginx hands the app one address header it worked out itself; the
+    headers a client can send must not be believed. Five failures, then a
+    sixth with a made-up CF-Connecting-IP and X-Forwarded-For, must still be
+    refused — the address did not change."""
+    await sign_in(client, "john")
+    bad = {"username": "john", "password": "definitely-wrong-pw"}
+    for _ in range(5):
+        assert (await client.post("/api/v1/auth/login", json=bad)).status_code == 401
+    forged = {"CF-Connecting-IP": "203.0.113.77", "X-Forwarded-For": "198.51.100.5"}
+    assert (await client.post("/api/v1/auth/login", json=bad, headers=forged)).status_code == 429
+
+
+async def test_old_password_login_cannot_outlive_a_concurrent_password_change(client, monkeypatch):
+    """A login that has already read the old password hash, and finishes
+    after the password was changed, gets a session — but one that is dead
+    on arrival, because the change bumped the credential version."""
+    import asyncio
+
+    from app.routers import auth as auth_module
+
+    token = await sign_in(client, "john")
+    creds = {"username": "john", "password": "pw-for-john-123"}
+
+    gate = asyncio.Event()
+    real_check = auth_module.check_password
+
+    async def slow_check(password, stored):
+        # Hold the racing login here: it has read the hash, not yet issued.
+        await gate.wait()
+        return real_check(password, stored)
+
+    async def to_thread(fn, *args):
+        if fn is real_check:
+            return await slow_check(*args)
+        return fn(*args)
+
+    monkeypatch.setattr(auth_module.asyncio, "to_thread", to_thread)
+    racing = asyncio.create_task(client.post("/api/v1/auth/login", json=creds))
+    await asyncio.sleep(0.05)
+
+    changed = await client.post(
+        "/api/v1/auth/change-password",
+        json={"current_password": "pw-for-john-123", "new_password": "new-pw-for-john-123"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert changed.status_code == 200
+    gate.set()
+    late = await racing
+    assert late.status_code == 200  # the login itself succeeded, as it did before
+    stale = late.json()["session_token"]
+    r = await client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {stale}"})
+    assert r.status_code == 401, "a session issued against the old password stayed valid"
+    # The session the change handed back is the one that works.
+    fresh = changed.json()["session_token"]
+    assert (
+        await client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {fresh}"})
+    ).status_code == 200
+
+
+def test_wrong_password_costs_the_same_for_missing_and_existing_users(monkeypatch):
+    """The legacy-hash fallback ran a second bcrypt only for accounts that
+    exist, so a wrong password took twice as long on a real username: a
+    timing tell for which usernames exist."""
+    import bcrypt
+
+    from app.core import security
+
+    calls: list[int] = []
+    real = bcrypt.checkpw
+
+    def counting(pw, hashed):
+        calls.append(1)
+        return real(pw, hashed)
+
+    monkeypatch.setattr(security.bcrypt, "checkpw", counting)
+    stored = security.hash_password("right-password-1")
+    security.check_password("wrong-password-1", stored)
+    existing = len(calls)
+    calls.clear()
+    security.check_password("wrong-password-1", None)
+    assert len(calls) == existing == 2
+
+
+async def test_unicode_admin_signup_secret_is_refused_not_a_500(client, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "admin_signup_secret", "s3cret-bootstrap-value")
+    r = await client.post(
+        "/api/v1/auth/register",
+        json={"username": "john", "password": "pw-for-john-123", "admin_secret": "é-guess-é"},
+    )
+    assert r.status_code == 403
+    monkeypatch.setattr(settings, "admin_signup_secret", "clé-secrète-é")
+    r = await client.post(
+        "/api/v1/auth/register",
+        json={"username": "john", "password": "pw-for-john-123", "admin_secret": "clé-secrète-é"},
+    )
+    assert r.status_code == 201

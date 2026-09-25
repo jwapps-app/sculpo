@@ -30,9 +30,12 @@ def check_password(password: str, password_hash: str | None) -> tuple[bool, bool
     target = password_hash.encode() if password_hash else _DUMMY_HASH
     ok = bcrypt.checkpw(_prepare(password), target)
     legacy = False
-    if not ok and password_hash and _is_legacy_length(password):
+    if not ok and _is_legacy_length(password):
         # Accounts created before pre-hashing stored bcrypt(password) directly.
-        # Keep them working; login re-hashes them into the new format.
+        # Keep them working; login re-hashes them into the new format. Run
+        # this for a missing user too, against the dummy hash: a wrong
+        # password on a real account costs two comparisons, so a missing
+        # account must cost two as well or the difference names the accounts.
         ok = bcrypt.checkpw(password.encode(), target)
         legacy = ok
     # An empty/absent hash must never authenticate: without this an empty

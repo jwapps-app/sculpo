@@ -50,6 +50,10 @@ class Settings(BaseSettings):
     # the admin name and own the instance. Unset = no extra check (fine on a
     # LAN-only or Access-gated deployment).
     admin_signup_secret: str = ""
+    # Production refuses to start with no signup secret unless this says the
+    # operator knows what that means: the instance is on a trusted network
+    # and nobody untrusted can reach it to register the admin name first.
+    allow_open_admin_signup: bool = False
 
     # Hard cap on a stored project's serialized size (imported meshes ride
     # inside the JSON; full-resolution imports can be tens of MB).
@@ -92,14 +96,23 @@ class Settings(BaseSettings):
                     "Refusing to start: ADMIN_USERS is empty — nobody would be able "
                     "to sign in. Set at least one admin username."
                 )
-            # Not fatal: a LAN-only or Access-gated instance is fine without it.
-            # But an empty value looks identical to a set one in a compose file,
-            # and the difference is who owns the instance — so say which it is,
-            # every boot, where it can actually be checked.
+            # An empty value looks identical to a set one in a compose file,
+            # and the difference is who owns the instance — so say which it
+            # is, every boot, where it can actually be checked. And refuse to
+            # run unclaimed unless the operator has said the network is
+            # trusted: a first deployment reachable from outside would
+            # otherwise hand its admin account to whoever registers first.
             names = ", ".join(sorted(self.admin_user_set))
             if self.admin_signup_secret:
                 _log.info(
                     "ADMIN_SIGNUP_SECRET is set — registering %s requires it.", names
+                )
+            elif not self.allow_open_admin_signup:
+                raise RuntimeError(
+                    "Refusing to start: ADMIN_SIGNUP_SECRET is empty, so whoever "
+                    f"registers {names} first would become an admin. Set it, or set "
+                    "ALLOW_OPEN_ADMIN_SIGNUP=true if this instance is only reachable "
+                    "from a trusted network."
                 )
             else:
                 _log.warning(

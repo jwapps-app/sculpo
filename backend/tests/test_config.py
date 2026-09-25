@@ -11,6 +11,7 @@ def make(**overrides) -> Settings:
         environment="production",
         secret_key="a-perfectly-long-and-random-secret-key!",
         ADMIN_USERS="john",  # the field is addressed by its env alias
+        admin_signup_secret="a-real-value",
         _env_file=None,  # ignore the local .env
     )
     base.update(overrides)
@@ -44,12 +45,17 @@ def test_admin_users_env_wins(monkeypatch):
     assert s.admin_user_set == {"john"}
 
 
-def test_empty_admin_signup_secret_warns_at_startup(caplog):
+def test_empty_admin_signup_secret_refuses_to_start():
     """An empty value is indistinguishable from a set one in a compose file,
-    and the difference decides who can claim the admin account. Boot has to
-    say which it is."""
-    with caplog.at_level("WARNING", logger="sculpo.config"):
+    and the difference decides who can claim the admin account. A first
+    deployment reachable from outside must not run unclaimed."""
+    with pytest.raises(RuntimeError, match="ADMIN_SIGNUP_SECRET"):
         make(admin_signup_secret="").validate_production()
+
+
+def test_open_admin_signup_is_allowed_only_when_said_so(caplog):
+    with caplog.at_level("WARNING", logger="sculpo.config"):
+        make(admin_signup_secret="", allow_open_admin_signup=True).validate_production()
     assert "ADMIN_SIGNUP_SECRET is empty" in caplog.text
     # Names the account at stake, so the warning is actionable.
     assert "john" in caplog.text

@@ -13,17 +13,16 @@ _bearer = HTTPBearer(auto_error=False)
 
 
 def client_ip(request: Request) -> str:
-    """The address nginx says the request came from. Behind the Cloudflare
-    tunnel that is CF-Connecting-IP; on a plain proxy, the first hop of
-    X-Forwarded-For; otherwise the socket peer. Only meaningful because the
-    app is reachable solely through nginx, which sets these — a client that
-    could talk to :8000 directly could claim any address it liked."""
-    cf = request.headers.get("cf-connecting-ip")
-    if cf:
-        return cf.strip()
-    xff = request.headers.get("x-forwarded-for")
-    if xff:
-        return xff.split(",")[0].strip()
+    """The address the request came from, as nginx worked it out: X-Real-IP,
+    which nginx always sets — to the Cloudflare-forwarded address when the
+    request came from a proxy the operator listed in TRUSTED_PROXY_CIDRS,
+    else to the socket peer. Client-sent CF-Connecting-IP and X-Forwarded-For
+    are not consulted: anyone can send those. Only meaningful because the app
+    is reachable solely through nginx; the dev server proxies without the
+    header and gets the socket peer."""
+    real = request.headers.get("x-real-ip")
+    if real:
+        return real.strip()
     return request.client.host if request.client else "unknown"
 
 
@@ -41,8 +40,10 @@ async def get_current_user(
     now = datetime.now(timezone.utc)
     if session is None or session.expires_at.replace(tzinfo=timezone.utc) < now:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired.")
-    # Re-resolve the user each request so a deleted user's tokens die.
+    # Re-resolve the user each request so a deleted user's tokens die, and
+    # so a session from before a password change dies with the change even
+    # when its login raced the change and was inserted after the purge.
     user = await db.get(User, session.user_id)
-    if user is None:
+    if user is None or session.auth_version != user.auth_version:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session expired.")
     return user

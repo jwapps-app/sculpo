@@ -117,6 +117,10 @@ async def create_project(
     db: AsyncSession = Depends(get_db),
 ) -> ProjectMetaOut:
     await _check_size(payload, request)
+    # Lock the user's row for the rest of the transaction, so two creates at
+    # the limit cannot both count, both see room, and both insert. (A no-op
+    # on SQLite, which serializes writers anyway.)
+    await db.execute(select(User.id).where(User.id == user.id).with_for_update())
     count = (
         await db.execute(select(func.count(Project.id)).where(Project.user_id == user.id))
     ).scalar_one()

@@ -20,7 +20,7 @@ from app.core.security import (
     new_token,
     verify_password,
 )
-from app.core.throttle import record_fail, throttled
+from app.core.throttle import MAX_FAILS_PER_USERNAME, record_fail, throttled
 from app.database import get_db
 from app.deps import client_ip, get_current_user
 from app.models import AllowedUsername, User, UserSession
@@ -52,6 +52,7 @@ async def _issue_session(db: AsyncSession, user: User) -> SessionOut:
             user_id=user.id,
             token_hash=token_hash,
             expires_at=datetime.now(timezone.utc) + timedelta(days=settings.session_ttl_days),
+            auth_version=user.auth_version,
         )
     )
     return SessionOut(session_token=raw, user=user_out(user))
@@ -89,7 +90,11 @@ async def register(payload: CredentialsIn, db: AsyncSession = Depends(get_db)) -
     # first. When the operator sets a signup secret, prove knowledge of it.
     if is_admin_name and settings.admin_signup_secret:
         supplied = payload.admin_secret or ""
-        if not secrets.compare_digest(supplied, settings.admin_signup_secret):
+        # Compared as bytes: the str form of compare_digest only takes ASCII,
+        # and a secret or a guess with an accent in it was a 500.
+        if not secrets.compare_digest(
+            supplied.encode("utf-8"), settings.admin_signup_secret.encode("utf-8")
+        ):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=_CLOSED,
@@ -127,7 +132,10 @@ async def login(
     # guesses from anywhere locked the real owner out for fifteen minutes —
     # a denial of service that cost the attacker nothing.
     key = f"{username}|{client_ip(request)}"
-    if await throttled(db, key):
+    # And a looser budget per username from anywhere, for when addresses
+    # cannot be told apart (see client_ip).
+    user_key = f"user:{username}"
+    if await throttled(db, key) or await throttled(db, user_key, MAX_FAILS_PER_USERNAME):
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=_TOO_MANY)
     user = (
         await db.execute(select(User).where(User.username == username))
@@ -137,7 +145,7 @@ async def login(
         check_password, payload.password, user.password_hash if user else None
     )
     if not ok or user is None:
-        await record_fail(key)
+        await record_fail(db, key, user_key)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid username or password.",
@@ -172,14 +180,17 @@ async def change_password(
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=_TOO_MANY)
     ok = await asyncio.to_thread(verify_password, payload.current_password, user.password_hash)
     if not ok:
-        await record_fail(f"pw:{user.id}")
+        await record_fail(db, f"pw:{user.id}")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Current password is wrong."
         )
     user.password_hash = await asyncio.to_thread(hash_password, payload.new_password)
     # Changing a password is how someone locks out a thief, so every other
     # session must die — otherwise a stolen token stays valid for its full 90
-    # days. The caller gets a fresh token in the response.
+    # days. The caller gets a fresh token in the response. The version bump
+    # also kills a session whose login read the old hash and finished after
+    # this: it carries the old version and is refused on its first use.
+    user.auth_version += 1
     for session in (
         await db.execute(select(UserSession).where(UserSession.user_id == user.id))
     ).scalars():
@@ -198,7 +209,9 @@ async def logout(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> None:
-    # Drop every session for this user ("sign out everywhere").
+    # Drop every session for this user ("sign out everywhere"), including
+    # any a concurrent login is about to insert.
+    user.auth_version += 1
     sessions = (
         await db.execute(select(UserSession).where(UserSession.user_id == user.id))
     ).scalars()

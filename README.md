@@ -83,7 +83,9 @@ sidecar and expects to sit behind a reverse proxy.
 | --- | --- | --- |
 | `SECRET_KEY` | yes | 32+ chars. Refuses to start on a placeholder. |
 | `ADMIN_USERS` | yes | Comma-separated admin usernames. |
-| `ADMIN_SIGNUP_SECRET` | strongly advised | Must be presented to register an admin name. Without it, on a reachable instance whoever registers that name first owns the instance. |
+| `ADMIN_SIGNUP_SECRET` | yes, or the next | Must be presented to register an admin name. Without it, whoever registers that name first owns the instance, so production refuses to start with it empty. |
+| `ALLOW_OPEN_ADMIN_SIGNUP` | no | `true` lets production start with no signup secret. Only for an instance nobody untrusted can reach. |
+| `TRUSTED_PROXY_CIDRS` | no | Comma-separated CIDRs of proxies whose forwarded client address (`CF-Connecting-IP`) nginx believes — the network cloudflared runs on, say. Empty means nobody's: every client counts as its socket address, and login throttling is per username from anywhere. |
 | `DB_PASSWORD` | yes | Postgres password. |
 | `APP_PORT` | no | Host port, default 8220. |
 | `IMAGE_TAG` | no | Defaults to `latest`. Set to a `sha-<commit>` tag to pin a known-good api/web pair. |

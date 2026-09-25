@@ -28,8 +28,11 @@ services:
       SECRET_KEY: ${SECRET_KEY}
       ADMIN_USERS: ${ADMIN_USERS}
       # Must be supplied when registering an admin username. Without it,
-      # whoever reaches a public instance first can claim the admin name.
+      # whoever reaches a public instance first can claim the admin name —
+      # so the API refuses to start with it empty unless ALLOW_OPEN_ADMIN_SIGNUP
+      # says the instance is on a trusted network.
       ADMIN_SIGNUP_SECRET: ${ADMIN_SIGNUP_SECRET:-}
+      ALLOW_OPEN_ADMIN_SIGNUP: ${ALLOW_OPEN_ADMIN_SIGNUP:-false}
     depends_on:
       db:
         condition: service_healthy
@@ -37,6 +40,10 @@ services:
   web:
     image: ${IMAGE_PREFIX:-ghcr.io/jwapps-app/sculpo}-web:${IMAGE_TAG:-latest}
     mem_limit: 128m
+    environment:
+      # Proxies whose forwarded client address nginx believes, as CIDRs
+      # (the cloudflared container's network, say). Empty: nobody's.
+      TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-}
     ports:
       - "${APP_PORT:-8220}:80"
     depends_on:
