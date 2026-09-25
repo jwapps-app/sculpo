@@ -5,6 +5,7 @@ import App from "./App.tsx";
 import { ErrorBoundary } from "./components/ErrorBoundary.tsx";
 import { APP_NAME } from "./constants/branding.ts";
 import { manifoldReady } from "./lib/manifold.ts";
+import { flushLocal } from "./state/cloudSync.ts";
 
 document.title = APP_NAME;
 
@@ -25,7 +26,9 @@ if ("serviceWorker" in navigator) {
   navigator.serviceWorker.addEventListener("controllerchange", () => {
     if (!hadController || reloaded) return;
     reloaded = true;
-    window.location.reload();
+    // Whatever was edited in the last second goes to the browser's copy
+    // first; the reload would otherwise drop it.
+    void flushLocal().finally(() => window.location.reload());
   });
 }
 

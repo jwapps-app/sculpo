@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, ForeignKey, LargeBinary, String
+from sqlalchemy import Integer, JSON, DateTime, ForeignKey, LargeBinary, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -25,6 +25,11 @@ class Project(Base):
     )
     name: Mapped[str] = mapped_column(String(200), default="Untitled")
     data: Mapped[dict[str, Any]] = mapped_column(JSON)
+    # Bumped by every save. A client sends the revision it last saw, and a
+    # save against an older one is refused — so two devices editing the same
+    # design cannot silently overwrite each other; the loser keeps its work
+    # as a copy instead.
+    revision: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     # A small picture of the design, rendered by the client and stored as
     # opaque bytes — the server never inspects it, and never generates it.
     # Kept in its own column so listing projects stays a metadata-only query.

@@ -19,7 +19,7 @@ import {
 } from "../lib/api";
 import { useScene } from "../state/store";
 import { useAuth } from "../state/auth";
-import { captureIfMissing, markSynced, syncNow, useCloudSync } from "../state/cloudSync";
+import { captureIfMissing, declareDoc, syncNow, useCloudSync } from "../state/cloudSync";
 import { ServerSettings } from "./ServerSettings";
 import { ProjectLibrary } from "./ProjectLibrary";
 
@@ -127,9 +127,9 @@ export function CloudPanel() {
   const openFromCloud = (id: string) =>
     run(async () => {
       const full = await api.getProject(id);
-      loadProject(full.data, full.id);
+      loadProject(full.data, full.id, full.revision);
       // Freshly opened = already in sync; don't immediately re-upload it.
-      markSynced(useScene.getState().project);
+      declareDoc({ synced: true });
       // ...but do give it a preview if it never got one.
       if (!projects?.find((p) => p.id === id)?.thumbnail_at) captureIfMissing(id);
       setOpen(false);
@@ -205,10 +205,7 @@ export function CloudPanel() {
                   </button>
                   <button
                     onClick={() =>
-                      run(async () => {
-                        await signOut();
-                        setCloudProjectId(null);
-                      })
+                      run(() => signOut())
                     }
                     title="Sign out"
                     className="flex items-center gap-1 hover:text-neutral-800"
@@ -274,7 +271,7 @@ export function CloudPanel() {
                     : sync.status === "error"
                       ? `Sync problem: ${sync.detail}`
                       : sync.status === "saved"
-                        ? "All changes saved automatically"
+                        ? (sync.detail ?? "All changes saved automatically")
                         : cloudProjectId
                           ? "In sync — changes save automatically"
                           : "Changes will save automatically as you work"}
@@ -288,6 +285,13 @@ export function CloudPanel() {
                   </button>
                 )}
               </div>
+              {sync.local !== "ok" && (
+                <div className="rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-800">
+                  This browser is not keeping a copy of your work
+                  {sync.local === "unsupported" ? " (no local storage)" : ""}. Save a project
+                  file if you work offline.
+                </div>
+              )}
               <button
                 onClick={openLibrary}
                 className="flex w-full items-center justify-center gap-1.5 rounded border border-neutral-300 px-2 py-1.5 text-xs font-medium hover:bg-neutral-100"

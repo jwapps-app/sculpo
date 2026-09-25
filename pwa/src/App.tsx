@@ -6,13 +6,11 @@ import { Inspector } from "./components/Inspector";
 import { SketchDialog } from "./components/SketchDialog";
 import { SignInGate } from "./components/SignInGate";
 import { useShortcuts } from "./hooks/useShortcuts";
-import { useAutosave } from "./hooks/useAutosave";
 import { useAuth } from "./state/auth";
 import { startCloudSync } from "./state/cloudSync";
 
 export default function App() {
   useShortcuts();
-  useAutosave();
   const status = useAuth((s) => s.status);
 
   useEffect(() => {

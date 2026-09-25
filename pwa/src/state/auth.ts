@@ -26,6 +26,17 @@ interface AuthState {
   signOut: () => Promise<void>;
 }
 
+// Sign-out is a two-step affair for the sync engine: get the account's work
+// to safety first, then clear the scene so the next sign-in on this browser
+// starts from nothing. Registered from there to keep this module free of a
+// circular import.
+let beforeSignOut: (() => Promise<void>) | null = null;
+let afterSignOutHook: (() => void) | null = null;
+export function setSignOutHooks(before: () => Promise<void>, after: () => void) {
+  beforeSignOut = before;
+  afterSignOutHook = after;
+}
+
 export const useAuth = create<AuthState>()((set) => ({
   status: "checking",
   user: null,
@@ -67,6 +78,7 @@ export const useAuth = create<AuthState>()((set) => ({
   },
 
   signOut: async () => {
+    await beforeSignOut?.();
     try {
       await api.logout();
     } catch {
@@ -74,5 +86,13 @@ export const useAuth = create<AuthState>()((set) => ({
     }
     setToken(null);
     set({ status: "signed-out", user: null });
+    afterSignOutHook?.();
   },
 }));
+
+declare global {
+  interface Window {
+    __auth?: typeof useAuth;
+  }
+}
+if (import.meta.env.DEV) window.__auth = useAuth;

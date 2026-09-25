@@ -224,10 +224,11 @@ export function Toolbar() {
   };
 
   const onNewProject = () => {
-    if (
-      useScene.getState().project.rootOrder.length === 0 ||
-      confirm("Start a new project? Unsaved changes will be lost.")
-    ) {
+    const s = useScene.getState();
+    const kept = s.cloudProjectId
+      ? "It stays in your library."
+      : "It is not saved anywhere else — export it first if you want to keep it.";
+    if (s.project.rootOrder.length === 0 || confirm(`Start a new project? ${kept}`)) {
       newProject();
     }
   };

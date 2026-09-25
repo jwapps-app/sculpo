@@ -59,6 +59,8 @@ class ProjectMetaOut(BaseModel):
     # When the thumbnail was last written; null means there isn't one. Doubles
     # as the cache-buster the client puts on the image URL.
     thumbnail_at: datetime | None = None
+    # Save counter; see ProjectIn.expected_revision.
+    revision: int = 1
 
 
 class ProjectOut(ProjectMetaOut):
@@ -68,6 +70,12 @@ class ProjectOut(ProjectMetaOut):
 class ProjectIn(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     data: dict[str, Any]
+    # On update: the revision this save is built on. If the stored project
+    # has moved past it (another device saved), the save is refused with 409
+    # and the current revision, and the client decides what to do — Sculpo
+    # keeps the local version as a copy. Omitted means "replace regardless",
+    # which is what clients from before revisions do.
+    expected_revision: int | None = None
 
 
 class ThumbnailIn(BaseModel):

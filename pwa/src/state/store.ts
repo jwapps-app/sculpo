@@ -189,6 +189,12 @@ interface SceneState {
   sketchEditId: string | null;
   // Server id of the currently open project, when it came from the cloud.
   cloudProjectId: string | null;
+  // Revision of the cloud copy this scene was built on; null until known.
+  cloudRevision: number | null;
+  // Identity of the design on screen, new on every load or "new project".
+  // The sync engine files saves under it, so a save that finishes after the
+  // scene has moved on is credited to the design it was for.
+  docToken: string;
 
   addShape: (kind: PrimitiveKind, placement?: Placement) => void;
   placeShapeAt: (kind: PrimitiveKind, position: Vec3, rotation: Vec3) => void;
@@ -240,7 +246,9 @@ interface SceneState {
   groupSelected: () => void;
   ungroupSelected: () => void;
   setProjectName: (name: string) => void;
-  loadProject: (project: Project, cloudId?: string | null) => void;
+  loadProject: (project: Project, cloudId?: string | null, revision?: number | null) => void;
+  setCloudRef: (id: string | null, revision: number | null) => void;
+  clearClipboard: () => void;
   newProject: () => void;
   toggleLockSelected: () => void;
   hideSelected: () => void;
@@ -301,6 +309,8 @@ export const useScene = create<SceneState>()(
       sketchMode: null,
       sketchEditId: null,
       cloudProjectId: null,
+      cloudRevision: null,
+      docToken: newId(),
 
       addShape: (kind, placement) => {
         const shape = makeShape(kind);
@@ -527,7 +537,15 @@ export const useScene = create<SceneState>()(
         }));
       },
 
-      setCloudProjectId: (id) => set({ cloudProjectId: id }),
+      setCloudProjectId: (id) => set({ cloudProjectId: id, cloudRevision: null }),
+      setCloudRef: (id, revision) => set({ cloudProjectId: id, cloudRevision: revision }),
+      clearClipboard: () => {
+        try {
+          localStorage.removeItem(CLIPBOARD_KEY);
+        } catch {
+          /* nothing to clear */
+        }
+      },
 
       addImportedMesh: (params, name) => {
         const shape = makeShape("mesh");
@@ -991,7 +1009,7 @@ export const useScene = create<SceneState>()(
 
       setProjectName: (name) => set((s) => ({ project: { ...s.project, name } })),
 
-      loadProject: (project, cloudId = null) => {
+      loadProject: (project, cloudId = null, revision = null) => {
         set({
           project,
           selection: [],
@@ -1000,6 +1018,8 @@ export const useScene = create<SceneState>()(
           editingGroupId: null,
           smartDup: null,
           cloudProjectId: cloudId,
+          cloudRevision: revision,
+          docToken: newId(),
         });
         useScene.temporal.getState().clear();
       },

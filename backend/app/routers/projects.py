@@ -7,9 +7,10 @@ import binascii
 import json
 import re
 from datetime import datetime, timezone
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -39,15 +40,54 @@ async def _check_size(payload: ProjectIn, request: Request) -> None:
         )
 
 
+_NOT_FOUND = HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
+
+# The metadata columns — everything except `data` and the thumbnail bytes.
+# Loading a whole Project row means loading and parsing its JSON, which for
+# an imported mesh is tens of megabytes; nothing below needs that except the
+# one route that returns it.
+_META = (
+    Project.id,
+    Project.name,
+    Project.created_at,
+    Project.updated_at,
+    Project.thumbnail_at,
+    Project.revision,
+)
+
+
+def _meta(row: Any) -> ProjectMetaOut:
+    return ProjectMetaOut(
+        id=row.id,
+        name=row.name,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+        thumbnail_at=row.thumbnail_at,
+        revision=row.revision,
+    )
+
+
 async def _owned(db: AsyncSession, user: User, project_id: str) -> Project:
+    """The full row, data included — only for the route that returns it."""
     project = (
         await db.execute(
             select(Project).where(Project.id == project_id, Project.user_id == user.id)
         )
     ).scalar_one_or_none()
     if project is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found.")
+        raise _NOT_FOUND
     return project
+
+
+async def _owned_meta(db: AsyncSession, user: User, project_id: str) -> ProjectMetaOut:
+    row = (
+        await db.execute(
+            select(*_META).where(Project.id == project_id, Project.user_id == user.id)
+        )
+    ).one_or_none()
+    if row is None:
+        raise _NOT_FOUND
+    return _meta(row)
 
 
 @router.get("", response_model=list[ProjectMetaOut])
@@ -60,27 +100,10 @@ async def list_projects(
     # megabytes for a response measured in bytes, and an OOM kill on the way.
     rows = (
         await db.execute(
-            select(
-                Project.id,
-                Project.name,
-                Project.created_at,
-                Project.updated_at,
-                Project.thumbnail_at,
-            )
-            .where(Project.user_id == user.id)
-            .order_by(Project.updated_at.desc())
+            select(*_META).where(Project.user_id == user.id).order_by(Project.updated_at.desc())
         )
     ).all()
-    return [
-        ProjectMetaOut(
-            id=r.id,
-            name=r.name,
-            created_at=r.created_at,
-            updated_at=r.updated_at,
-            thumbnail_at=r.thumbnail_at,
-        )
-        for r in rows
-    ]
+    return [_meta(r) for r in rows]
 
 
 # Saves answer with metadata only. The client just sent the data, holds it,
@@ -126,11 +149,34 @@ async def update_project(
     db: AsyncSession = Depends(get_db),
 ) -> ProjectMetaOut:
     await _check_size(payload, request)
-    project = await _owned(db, user, project_id)
-    project.name = payload.name
-    project.data = payload.data
-    await db.flush()
-    return ProjectMetaOut.model_validate(project)
+    # One conditional UPDATE, so the revision check and the write are the
+    # same statement: two saves racing on the same revision cannot both win.
+    stmt = (
+        update(Project)
+        .where(Project.id == project_id, Project.user_id == user.id)
+        .values(
+            name=payload.name,
+            data=payload.data,
+            revision=Project.revision + 1,
+            updated_at=datetime.now(timezone.utc),
+        )
+    )
+    if payload.expected_revision is not None:
+        stmt = stmt.where(Project.revision == payload.expected_revision)
+    result = await db.execute(stmt)
+    if result.rowcount == 1:
+        return await _owned_meta(db, user, project_id)
+    # Nothing matched: either the project is not this user's, or it has moved
+    # on. Tell the two apart, since the client acts differently on each.
+    current = await _owned_meta(db, user, project_id)
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={
+            "message": "This project was saved from elsewhere since you opened it.",
+            "revision": current.revision,
+            "updated_at": current.updated_at.isoformat(),
+        },
+    )
 
 
 @router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -139,7 +185,11 @@ async def delete_project(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> None:
-    await db.delete(await _owned(db, user, project_id))
+    result = await db.execute(
+        delete(Project).where(Project.id == project_id, Project.user_id == user.id)
+    )
+    if result.rowcount != 1:
+        raise _NOT_FOUND
 
 
 # Only the formats a browser canvas actually produces. Anything else is either
@@ -156,7 +206,7 @@ async def put_thumbnail(
 ) -> Response:
     """The client renders its own preview and sends it here. The server stores
     the bytes and never looks inside them — all geometry stays client-side."""
-    project = await _owned(db, user, project_id)
+    project = await _owned_meta(db, user, project_id)
     match = _DATA_URL.match(payload.image.strip())
     if not match:
         raise HTTPException(
@@ -201,12 +251,20 @@ async def get_thumbnail(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    project = await _owned(db, user, project_id)
-    if not project.thumbnail:
+    row = (
+        await db.execute(
+            select(Project.thumbnail, Project.thumbnail_type).where(
+                Project.id == project_id, Project.user_id == user.id
+            )
+        )
+    ).one_or_none()
+    if row is None:
+        raise _NOT_FOUND
+    if not row.thumbnail:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No thumbnail.")
     return Response(
-        content=project.thumbnail,
-        media_type=project.thumbnail_type or "image/webp",
+        content=row.thumbnail,
+        media_type=row.thumbnail_type or "image/webp",
         headers={
             # The client appends ?v=<thumbnail_at>, so a given URL never
             # changes content and can be cached hard. Private: it is a picture

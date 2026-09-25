@@ -1,5 +1,8 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { APP_NAME } from "../constants/branding";
+import { localSaveState } from "../lib/localStore";
+import { saveProjectFile } from "../lib/projectFile";
+import { useScene } from "../state/store";
 
 interface State {
   error: Error | null;
@@ -25,10 +28,20 @@ async function clearCachesAndReload() {
 }
 
 function workOffline() {
-  // The scene lives in localStorage, so dropping the server address gets the
-  // modeller back even when the sync side is what is broken.
+  // The scene is kept in the browser, so dropping the server address gets
+  // the modeller back even when the sync side is what is broken. The
+  // session belonged to that server; it goes too.
   localStorage.removeItem("server-url");
+  localStorage.removeItem("session-token");
   window.location.reload();
+}
+
+function downloadProject() {
+  try {
+    saveProjectFile(useScene.getState().project);
+  } catch {
+    alert("Could not read the design from memory.");
+  }
 }
 
 /**
@@ -67,7 +80,9 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
           <div>
             <h1 className="text-lg font-bold">{APP_NAME} hit an error</h1>
             <p className="mt-1 text-sm text-neutral-600">
-              Your work is saved in this browser and is not lost. Try one of these.
+              {localSaveState() === "ok"
+                ? "Your work is saved in this browser. Try one of these."
+                : "This browser could not keep a copy of your work — download it before reloading."}
             </p>
           </div>
 
@@ -88,6 +103,13 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, State> {
               className="rounded border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100"
             >
               Clear cache and reload
+            </button>
+            <button
+              onClick={downloadProject}
+              title="Saves the design as a project file you can open again"
+              className="rounded border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100"
+            >
+              Download project file
             </button>
             <button
               onClick={workOffline}

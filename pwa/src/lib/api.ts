@@ -35,9 +35,12 @@ export function setToken(token: string | null) {
 
 export class ApiError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  /** The response's `detail`, when it was an object (a 409 carries the current revision). */
+  detail: unknown;
+  constructor(status: number, message: string, detail?: unknown) {
     super(message);
     this.status = status;
+    this.detail = detail;
   }
 }
 
@@ -57,13 +60,18 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     onUnauthorized?.();
   }
   if (!res.ok) {
-    let detail = res.statusText;
+    let message = res.statusText;
+    let detail: unknown;
     try {
-      detail = (await res.json()).detail ?? detail;
+      detail = (await res.json()).detail;
+      if (typeof detail === "string") message = detail;
+      else if (detail && typeof detail === "object" && "message" in detail) {
+        message = String((detail as { message: unknown }).message);
+      }
     } catch {
       /* not json */
     }
-    throw new ApiError(res.status, detail);
+    throw new ApiError(res.status, message, detail);
   }
   return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
 }
@@ -73,6 +81,8 @@ export interface ProjectMeta {
   name: string;
   created_at: string;
   updated_at: string;
+  /** Save counter; a save names the revision it is built on, see updateProject. */
+  revision: number;
   /** When the preview was last written; null means there isn't one. */
   thumbnail_at: string | null;
 }
@@ -183,10 +193,13 @@ export const api = {
     request<ProjectMeta & { data: Project }>(`/projects/${id}`),
   createProject: (name: string, data: Project) =>
     request<ProjectMeta>("/projects", { method: "POST", body: JSON.stringify({ name, data }) }),
-  updateProject: (id: string, name: string, data: Project) =>
+  // `expectedRevision` is the revision this save is built on; the server
+  // refuses (409, with the current revision in the error's detail) if
+  // another device has saved since. Omit to replace regardless.
+  updateProject: (id: string, name: string, data: Project, expectedRevision?: number) =>
     request<ProjectMeta>(`/projects/${id}`, {
       method: "PUT",
-      body: JSON.stringify({ name, data }),
+      body: JSON.stringify({ name, data, expected_revision: expectedRevision }),
     }),
   deleteProject: (id: string) => request<void>(`/projects/${id}`, { method: "DELETE" }),
 };
