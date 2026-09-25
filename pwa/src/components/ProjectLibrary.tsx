@@ -16,11 +16,17 @@ function useThumbnail(project: ProjectMeta): string | null {
     }
     let dead = false;
     let objectUrl: string | null = null;
-    void api.fetchThumbnail(project.id).then((blob) => {
-      if (dead || !blob) return;
-      objectUrl = URL.createObjectURL(blob);
-      setUrl(objectUrl);
-    });
+    void api
+      .fetchThumbnail(project.id, stamp)
+      .then((blob) => {
+        if (dead || !blob) return;
+        objectUrl = URL.createObjectURL(blob);
+        setUrl(objectUrl);
+      })
+      .catch(() => {
+        // Offline or a dropped connection: the card falls back to its text.
+        if (!dead) setUrl(null);
+      });
     return () => {
       dead = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);

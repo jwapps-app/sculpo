@@ -154,9 +154,12 @@ export const api = {
   // The image endpoint needs the bearer token, which an <img src> cannot
   // send — so fetch the bytes and hand back a blob the caller turns into an
   // object URL.
-  fetchThumbnail: async (id: string): Promise<Blob | null> => {
+  // `version` (the project's thumbnail_at) goes in the URL: the server marks
+  // the image immutable and cacheable for a year, so a new picture must have
+  // a new address or the browser keeps showing the old one.
+  fetchThumbnail: async (id: string, version: string): Promise<Blob | null> => {
     const token = getToken();
-    const res = await fetch(`${base()}/projects/${id}/thumbnail`, {
+    const res = await fetch(`${base()}/projects/${id}/thumbnail?v=${encodeURIComponent(version)}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
     if (!res.ok) return null;

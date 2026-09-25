@@ -177,9 +177,11 @@ async def put_thumbnail(
                 f"limit {settings.max_thumbnail_bytes})."
             ),
         )
-    # A Core UPDATE with updated_at pinned to its current value: the column's
+    # A Core UPDATE with updated_at pinned to itself, in SQL: the column's
     # onupdate would otherwise fire and a preview refresh would count as an
     # edit, reshuffling the library's "last touched" order for no reason.
+    # Pinned to the column, not to the value read above, so an edit that
+    # commits between that read and this write keeps its newer stamp.
     await db.execute(
         update(Project)
         .where(Project.id == project.id)
@@ -187,7 +189,7 @@ async def put_thumbnail(
             thumbnail=raw,
             thumbnail_type=f"image/{match.group(1)}",
             thumbnail_at=datetime.now(timezone.utc),
-            updated_at=project.updated_at,
+            updated_at=Project.updated_at,
         )
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)

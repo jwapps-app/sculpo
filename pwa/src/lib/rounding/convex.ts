@@ -70,7 +70,7 @@ export function buildConvex(spec: ConvexSpec, picks: Picks): THREE.BufferGeometr
       }
       if (area < 0) poly = poly.reverse();
       const wedge = keep(new lib.CrossSection([poly]));
-      const circle = keep(lib.CrossSection.circle(r, segmentsFor(r)).translate(C));
+      const circle = keep(keep(lib.CrossSection.circle(r, segmentsFor(r))).translate(C));
       const section = keep(wedge.subtract(circle));
       const margin = Math.hypot(C[0], C[1]) + r;
       const prism = keep(keep(lib.Manifold.extrude(section, L + 2 * margin)).translate([0, 0, -margin]));
@@ -120,7 +120,9 @@ export function buildConvex(spec: ConvexSpec, picks: Picks): THREE.BufferGeometr
         pts.push(foot.addScaledVector(outward, eps).toArray() as Vec3);
       }
       const cell = keep(lib.Manifold.hull(pts));
-      const ball = keep(lib.Manifold.sphere(r, segmentsFor(r)).translate(C.toArray() as Vec3));
+      const ball = keep(
+        keep(lib.Manifold.sphere(r, segmentsFor(r))).translate(C.toArray() as Vec3),
+      );
       cutters.push(keep(cell.subtract(ball)));
     });
 

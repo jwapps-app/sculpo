@@ -36,5 +36,10 @@ export const DEFAULT_STEP: Record<Units, number> = {
   in: MM_PER_INCH / 16,
 };
 
-// Param keys that are counts, not lengths — never converted.
-export const COUNT_PARAMS = new Set(["segments", "sides", "points"]);
+// Param keys that are counts, not lengths — never converted to inches.
+export const COUNT_PARAMS = new Set(["segments", "sides", "points", "teeth"]);
+// Param keys that are on/off switches stored as 0 or 1.
+export const FLAG_PARAMS = new Set(["internal"]);
+// Param keys where zero is a real setting (sharp edges, no bore), not a
+// degenerate size.
+export const ZEROABLE_PARAMS = new Set(["radius", "bevel", "bore"]);

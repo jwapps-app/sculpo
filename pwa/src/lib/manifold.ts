@@ -432,13 +432,16 @@ export function filletedBox(
       const iq = sq * (half[q] - r);
       const op = sp * (half[p] + eps);
       const oq = sq * (half[q] + eps);
+      // Every engine object is kept, including the ones a translate() is
+      // called on: translate returns a new object and the original would
+      // otherwise never be freed.
       const square = keep(
-        lib.CrossSection.square([Math.abs(op - ip), Math.abs(oq - iq)]).translate([
+        keep(lib.CrossSection.square([Math.abs(op - ip), Math.abs(oq - iq)])).translate([
           Math.min(ip, op),
           Math.min(iq, oq),
         ]),
       );
-      const circle = keep(lib.CrossSection.circle(r, segments).translate([ip, iq]));
+      const circle = keep(keep(lib.CrossSection.circle(r, segments)).translate([ip, iq]));
       const section = keep(square.subtract(circle));
       const prism = keep(lib.Manifold.extrude(section, size[a] + 2 * eps, 0, 0, [1, 1], true));
       cutters.push(keep(prism.transform(axisFrame(p, q, a))));
@@ -454,8 +457,8 @@ export function filletedBox(
       const center = corner.map((s, i) => s * (half[i] - r)) as [number, number, number];
       const outer = corner.map((s, i) => s * (half[i] + eps));
       const lo = center.map((c, i) => Math.min(c, outer[i])) as [number, number, number];
-      const cube = keep(lib.Manifold.cube([r + eps, r + eps, r + eps]).translate(lo));
-      const ball = keep(lib.Manifold.sphere(r, segments).translate(center));
+      const cube = keep(keep(lib.Manifold.cube([r + eps, r + eps, r + eps])).translate(lo));
+      const ball = keep(keep(lib.Manifold.sphere(r, segments)).translate(center));
       cutters.push(keep(cube.subtract(ball)));
     }
 

@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useScene } from "../state/store";
+import { roundingSpec } from "../lib/primitives";
+import { formatPicks, parsePicks, pickEdges } from "../lib/rounding";
 import { parsePaths, parsePoints, type Pt } from "../lib/sketchGeometry";
 import { isGroup } from "../types/scene";
 
@@ -213,6 +215,18 @@ export function SketchDialog() {
       };
     }
     if (editId) {
+      // Keep the edges the user rounded, where the new outline still has
+      // them: a height change keeps all, a redrawn outline keeps those whose
+      // corners still exist. Height, brush and segments carry over too.
+      const editNode = useScene.getState().project.nodes[editId];
+      const prior = editNode && !isGroup(editNode) ? editNode.params : undefined;
+      if (prior && typeof prior.edges === "string") {
+        const spec = roundingSpec({ kind, params });
+        const valid = new Set(spec ? pickEdges(spec).map((e) => e.id) : []);
+        const kept = parsePicks(kind, { ...params, edges: prior.edges });
+        for (const id of [...kept.keys()]) if (!valid.has(id)) kept.delete(id);
+        params.edges = formatPicks(kept);
+      }
       updateShape(editId, { params });
       setSketchMode(null);
     } else {

@@ -7,6 +7,8 @@ import { FONT_NAMES, roundingSpec } from "../lib/primitives";
 import { parsePicks, pickEdges } from "../lib/rounding";
 import {
   COUNT_PARAMS,
+  FLAG_PARAMS,
+  ZEROABLE_PARAMS,
   fromDisplay as mmFromDisplay,
   toDisplay as mmToDisplay,
   type Units,
@@ -264,8 +266,6 @@ function DraftNumberField({
 
 // Params that hold encoded geometry/sketch data, not user-editable values.
 const HIDDEN_PARAMS = new Set(["pos", "idx", "profile", "paths", "edges"]);
-// Params where 0 is meaningful rather than degenerate.
-const ZEROABLE_PARAMS = new Set(["radius", "bevel"]);
 
 /** How many of a shape's edges are rounded, their radius, and the tool. */
 function ShapeRounding({ node }: { node: ShapeNode }) {
@@ -403,9 +403,24 @@ function ShapeParams({ node }: { node: ShapeNode }) {
         ),
       )}
       {numericKeys.map((key) => {
+        const raw = node.params[key] as number;
+        if (FLAG_PARAMS.has(key)) {
+          return (
+            <label key={key} className="flex items-center justify-between gap-2 text-sm">
+              <span className="text-neutral-500">{key}</span>
+              <input
+                type="checkbox"
+                checked={raw > 0.5}
+                onChange={(e) =>
+                  updateShape(node.id, { params: { ...node.params, [key]: e.target.checked ? 1 : 0 } })
+                }
+                className="h-4 w-4"
+              />
+            </label>
+          );
+        }
         const isCount = COUNT_PARAMS.has(key);
         const u: Units = isCount ? "mm" : units; // counts pass through untouched
-        const raw = node.params[key] as number;
         return (
           <label key={key} className="flex items-center justify-between gap-2 text-sm">
             <span className="text-neutral-500">{key}</span>

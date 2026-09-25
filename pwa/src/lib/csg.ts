@@ -152,16 +152,38 @@ function cutGroupBvh(
   return compactEvaluated(solid.geometry);
 }
 
+// Every distinct params object gets a small number the first time it is
+// seen. Params are replaced, never mutated, so the number stands in for
+// their content — without serializing them, which for an imported mesh means
+// tens of megabytes of base64 on every store update.
+const paramsIds = new WeakMap<object, number>();
+let nextParamsId = 1;
+function paramsId(params: object): number {
+  let id = paramsIds.get(params);
+  if (id === undefined) {
+    id = nextParamsId++;
+    paramsIds.set(params, id);
+  }
+  return id;
+}
+
 // Signature of everything that affects a group's evaluated geometry. The
 // group's own transform is deliberately excluded so moving a group never
-// re-runs the boolean.
+// re-runs the boolean, and so are colour, lock, transparency and visibility,
+// which change how a group is drawn but not its shape. Cheap enough to run
+// as a store selector: it is evaluated on every store update.
 export function subtreeSignature(group: GroupNode, nodes: Project["nodes"]): string {
   const parts: string[] = [group.childIds.join(",")];
   const visit = (id: string) => {
     const n = nodes[id];
     if (!n) return;
-    parts.push(JSON.stringify(n));
-    if (isGroup(n)) n.childIds.forEach(visit);
+    parts.push(id, n.position.join(","), n.rotation.join(","), n.scale.join(","));
+    if (isGroup(n)) {
+      parts.push(n.childIds.join(","));
+      n.childIds.forEach(visit);
+    } else {
+      parts.push(n.kind, n.role, String(paramsId(n.params)));
+    }
   };
   group.childIds.forEach(visit);
   return parts.join("|");

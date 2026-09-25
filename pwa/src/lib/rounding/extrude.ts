@@ -123,8 +123,10 @@ function arcCutter(
   const y0 = Math.min(yA, yB);
   const y1 = Math.max(yA, yB);
   const segments = 4 * Math.min(16, Math.max(4, Math.ceil(r * 2)));
-  const square = keep(lib.CrossSection.square([rho1 - rho0, y1 - y0]).translate([rho0, y0]));
-  const circle = keep(lib.CrossSection.circle(r, segments).translate([rs + d * r, -sigma * r]));
+  const square = keep(keep(lib.CrossSection.square([rho1 - rho0, y1 - y0])).translate([rho0, y0]));
+  const circle = keep(
+    keep(lib.CrossSection.circle(r, segments)).translate([rs + d * r, -sigma * r]),
+  );
   const section = keep(square.subtract(circle));
   // A hair past each end, so it overlaps the straight cuts it joins.
   const pad = 0.25;
@@ -173,8 +175,8 @@ function rimCutter(
   const y0 = Math.min(-k * eps, k * r);
   const y1 = Math.max(-k * eps, k * r);
   const segments = 4 * Math.min(16, Math.max(4, Math.ceil(r * 2)));
-  const square = keep(lib.CrossSection.square([r + eps, y1 - y0]).translate([-eps, y0]));
-  const circle = keep(lib.CrossSection.circle(r, segments).translate([r, k * r]));
+  const square = keep(keep(lib.CrossSection.square([r + eps, y1 - y0])).translate([-eps, y0]));
+  const circle = keep(keep(lib.CrossSection.circle(r, segments)).translate([r, k * r]));
   const section = keep(square.subtract(circle));
 
   const side = o.materialLeft ? 1 : -1;
