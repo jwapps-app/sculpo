@@ -190,15 +190,21 @@ export function subtreeSignature(group: GroupNode, nodes: Project["nodes"]): str
 }
 
 export function firstSolidColor(group: GroupNode, nodes: Project["nodes"]): string {
+  return findSolidColor(group, nodes) ?? "#b0b0b0";
+}
+
+// Null while searching: a nested group with no solid in it must not answer
+// with the fallback grey and stop the search short of a solid sibling.
+function findSolidColor(group: GroupNode, nodes: Project["nodes"]): string | null {
   for (const childId of group.childIds) {
     const child = nodes[childId];
     if (!child) continue;
     if (isGroup(child)) {
-      const c = firstSolidColor(child, nodes);
+      const c = findSolidColor(child, nodes);
       if (c) return c;
     } else if ((child as ShapeNode).role === "solid") {
       return (child as ShapeNode).color;
     }
   }
-  return "#b0b0b0";
+  return null;
 }

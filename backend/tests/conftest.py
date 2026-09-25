@@ -7,7 +7,6 @@ os.environ.update(
     DEBUG="true",
     DATABASE_URL="sqlite+aiosqlite:///:memory:",
     ADMIN_USERS="john",
-    SECRET_KEY="test-secret-key-that-is-long-enough!",
     ADMIN_SIGNUP_SECRET="",
 )
 
@@ -15,8 +14,20 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
+from sqlalchemy import event
+
 from app.database import Base, engine
 from app.main import app
+
+
+# SQLite does not enforce foreign keys unless asked, per connection. Without
+# this, the cascades the models declare are never exercised here, and a test
+# could pass on a delete that Postgres would refuse or cascade differently.
+@event.listens_for(engine.sync_engine, "connect")
+def _enable_sqlite_foreign_keys(dbapi_connection, _record):
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
 
 
 @pytest.fixture(scope="session")

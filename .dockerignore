@@ -1,0 +1,21 @@
+# Build context for the web image (built from the repo root). Only the
+# sources the Dockerfile copies belong in it: not a checkout's installed
+# dependencies, which would merge into the container's clean install, and
+# not local secrets or history.
+.git
+.github
+.claude
+**/node_modules
+**/dist
+**/.vite
+**/.venv
+**/__pycache__
+**/.pytest_cache
+**/.env
+**/.env.*
+!**/.env.example
+*.md
+!pwa/vendor/manifold/README.md
+docs
+backend
+sculpo-code-audit.md

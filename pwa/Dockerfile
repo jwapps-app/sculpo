@@ -9,7 +9,7 @@ ARG BUILD_ID=unknown
 ENV BUILD_ID=$BUILD_ID
 RUN npm run build
 
-FROM nginx:1.27-alpine
+FROM nginx:1.30-alpine
 COPY --from=build /build/dist /usr/share/nginx/html
 COPY infra/nginx/nginx.conf /etc/nginx/conf.d/default.conf
 # Included by every location that sets a header of its own (nginx drops

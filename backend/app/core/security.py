@@ -52,12 +52,6 @@ def _is_legacy_length(password: str) -> bool:
     return len(password.encode()) <= 72
 
 
-def needs_rehash(password: str, password_hash: str) -> bool:
-    """True when the stored hash is the pre-upgrade format. Costs a bcrypt;
-    prefer the `legacy` flag from check_password() when you already verified."""
-    return not bcrypt.checkpw(_prepare(password), password_hash.encode())
-
-
 def new_token() -> tuple[str, str]:
     """Returns (raw_token, sha256_hash). Only the hash is ever stored."""
     raw = secrets.token_urlsafe(32)

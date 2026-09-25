@@ -81,7 +81,6 @@ sidecar and expects to sit behind a reverse proxy.
 
 | Variable | Required | Notes |
 | --- | --- | --- |
-| `SECRET_KEY` | yes | 32+ chars. Refuses to start on a placeholder. |
 | `ADMIN_USERS` | yes | Comma-separated admin usernames. |
 | `ADMIN_SIGNUP_SECRET` | yes, or the next | Must be presented to register an admin name. Without it, whoever registers that name first owns the instance, so production refuses to start with it empty. |
 | `ALLOW_OPEN_ADMIN_SIGNUP` | no | `true` lets production start with no signup secret. Only for an instance nobody untrusted can reach. |
@@ -100,13 +99,24 @@ Passwords are bcrypt-hashed, session tokens are stored hashed, and every
 project query is scoped to its owner. Failed logins are throttled per
 username-and-address, so a stranger guessing at your name cannot lock you out.
 
+### Upgrading
+
+Migrations run automatically when the API container starts. The supported
+baseline is any database from migration `0003` on; `0002` (July 2026, before
+the first deployment) rebuilt the account tables from scratch and cannot
+carry an older database's users across.
+
 ### Backups
 
 A sidecar takes a nightly `pg_dump` into `/volume1/docker/sculpo/backups` and
-keeps fourteen days. That is the same disk as the database, so it protects
-against a bad migration, not a dead NAS. For an off-site copy, start the stack
-with `COMPOSE_PROFILES=offsite`, set `RCLONE_REMOTE` to any rclone target, and
-put a matching `rclone.conf` in `/volume1/docker/sculpo/rclone/`.
+keeps fourteen days; each archive is written under a temporary name and
+renamed into place only when complete. That is the same disk as the
+database, so it protects against a bad migration, not a dead host. For an
+off-site copy, start the stack with `COMPOSE_PROFILES=offsite`, set
+`RCLONE_REMOTE` to any rclone target, and put a matching `rclone.conf` in
+`/volume1/docker/sculpo/rclone/`. The copy only ever adds files; prune the
+remote with its own lifecycle rules, so it stays independent of the local
+folder.
 
 ## Architecture
 
@@ -133,11 +143,14 @@ uvicorn app.main:app --port 8020
 
 ```bash
 cd backend && pytest              # in-memory sqlite, no services needed
+npm test --prefix pwa             # vitest: validation, geometry, rounding, align
 npm run lint --prefix pwa         # oxlint
 ```
 
-CI runs the backend tests, a typecheck, the linter and a production build, and
-only publishes container images if all of them pass.
+CI runs both test suites, a typecheck, the linter and a production build on
+every push and pull request, and only publishes container images from a
+push if all of them pass. The backend suite also runs the migrations on an
+empty database and checks they produce the schema the models describe.
 
 ## Security
 

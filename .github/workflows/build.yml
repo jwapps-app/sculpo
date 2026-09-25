@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
     tags: ["v*"]
+  pull_request:
 
 jobs:
   # Nothing reaches the registry until this passes. Images used to publish on
@@ -28,16 +29,19 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: pwa/package-lock.json
-      - name: Frontend typecheck, lint and build
+      - name: Frontend typecheck, lint, tests and build
         working-directory: ./pwa
         run: |
           npm ci
           npx tsc -b
           npm run lint
+          npm test
           npm run build
 
   build:
     needs: test
+    # Only pushes publish; a pull request is tested and stops there.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read

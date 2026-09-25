@@ -40,7 +40,6 @@ import type { TransformMode } from "../state/store";
 import { isGroup } from "../types/scene";
 import { exportSceneStl } from "../lib/exportStl";
 import { saveProjectFile, parseProjectFile } from "../lib/projectFile";
-import { importMeshFile } from "../lib/importMesh";
 import { CloudPanel } from "./CloudPanel";
 
 // Common FDM build plates (mm). Sizes, not brand promises.
@@ -578,6 +577,9 @@ export function Toolbar() {
           e.target.value = "";
           if (!file) return;
           try {
+            // The importer carries three loaders and the WebAssembly
+            // decimator; most sessions never import, so it loads on first use.
+            const { importMeshFile } = await import("../lib/importMesh");
             const { params, name, triangles, simplifiedFrom, deviationMm } =
               await importMeshFile(file, (tris) =>
                 confirm(

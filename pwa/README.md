@@ -9,6 +9,7 @@ npm install
 npm run dev      # proxies /api to the backend on :8020
 npm run build
 npm run lint
+npm test         # vitest
 ```
 
 All geometry runs client-side, including the booleans and the STL export. See

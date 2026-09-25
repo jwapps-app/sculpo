@@ -7,6 +7,21 @@ import type { Project } from "../types/scene";
 // degrades away and the app works entirely offline.
 const SERVER_KEY = "server-url";
 const TOKEN_KEY = "session-token";
+// "Work offline" is a choice, not the absence of a server address: with no
+// address the app would still use the API on its own origin, and the sign-in
+// gate with it. This says: no API at all, whatever is reachable.
+const MODE_KEY = "server-mode";
+
+export function offlineMode(): boolean {
+  return localStorage.getItem(MODE_KEY) === "offline";
+}
+
+export function setOfflineMode(on: boolean) {
+  if (on) localStorage.setItem(MODE_KEY, "offline");
+  else localStorage.removeItem(MODE_KEY);
+  // A session belonged to the server we are no longer talking to.
+  if (on) setToken(null);
+}
 
 export function getServerUrl(): string {
   return localStorage.getItem(SERVER_KEY) ?? "";
@@ -114,6 +129,7 @@ export interface InviteCreated {
 
 export const api = {
   async available(at: string = base()): Promise<boolean> {
+    if (offlineMode()) return false;
     try {
       const res = await fetch(`${at}/health`);
       if (!res.ok) return false;

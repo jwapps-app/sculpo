@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { getServerUrl, setServerUrl } from "../lib/api";
+import { getServerUrl, setOfflineMode, setServerUrl } from "../lib/api";
 import { useAuth } from "../state/auth";
 
 // Points the app at a Sculpo server (or clears it, returning to standalone).
@@ -15,6 +15,7 @@ export function ServerSettings({ onDone }: { onDone?: () => void }) {
     setBusy(true);
     setNotice(null);
     const trimmed = url.trim();
+    setOfflineMode(false);
     setServerUrl(trimmed || null);
     await useAuth.getState().init();
     setBusy(false);
@@ -29,6 +30,7 @@ export function ServerSettings({ onDone }: { onDone?: () => void }) {
     setBusy(true);
     setUrl("");
     setServerUrl(null);
+    setOfflineMode(true);
     await useAuth.getState().init();
     setBusy(false);
     onDone?.();
@@ -38,7 +40,7 @@ export function ServerSettings({ onDone }: { onDone?: () => void }) {
     <div className="space-y-2">
       <p className="text-xs text-neutral-500">
         Sculpo works fully offline. Add a server address to sync projects across
-        devices.
+        devices — or leave it empty to use the server this page came from.
       </p>
       <input
         value={url}

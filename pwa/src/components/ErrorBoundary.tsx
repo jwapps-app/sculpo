@@ -28,9 +28,10 @@ async function clearCachesAndReload() {
 }
 
 function workOffline() {
-  // The scene is kept in the browser, so dropping the server address gets
-  // the modeller back even when the sync side is what is broken. The
-  // session belonged to that server; it goes too.
+  // The scene is kept in the browser, so switching the API off gets the
+  // modeller back even when the sync side is what is broken. The session
+  // belonged to that server; it goes too.
+  localStorage.setItem("server-mode", "offline");
   localStorage.removeItem("server-url");
   localStorage.removeItem("session-token");
   window.location.reload();

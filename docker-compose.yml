@@ -4,6 +4,7 @@
 services:
   db:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: app
       POSTGRES_PASSWORD: app
@@ -20,11 +21,10 @@ services:
 
   api:
     build: ./backend
+    restart: unless-stopped
     environment:
       ENVIRONMENT: development
-      DEBUG: "true"
       DATABASE_URL: postgresql+asyncpg://app:app@db:5432/app
-      SECRET_KEY: dev-secret-only-for-local-compose-use!
       ADMIN_USERS: ${ADMIN_USERS:-john}
     ports:
       - "127.0.0.1:8020:8000"
@@ -36,6 +36,7 @@ services:
     build:
       context: .
       dockerfile: pwa/Dockerfile
+    restart: unless-stopped
     ports:
       - "127.0.0.1:8120:80"
     depends_on:

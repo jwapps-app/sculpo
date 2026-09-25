@@ -9,7 +9,6 @@ from app.config import Settings
 def make(**overrides) -> Settings:
     base = dict(
         environment="production",
-        secret_key="a-perfectly-long-and-random-secret-key!",
         ADMIN_USERS="john",  # the field is addressed by its env alias
         admin_signup_secret="a-real-value",
         _env_file=None,  # ignore the local .env
@@ -21,11 +20,6 @@ def make(**overrides) -> Settings:
 def test_production_requires_admin_users():
     with pytest.raises(RuntimeError, match="ADMIN_USERS"):
         make(ADMIN_USERS="").validate_production()
-
-
-def test_production_requires_strong_secret():
-    with pytest.raises(RuntimeError, match="SECRET_KEY"):
-        make(secret_key="short").validate_production()
 
 
 def test_valid_production_config_passes():

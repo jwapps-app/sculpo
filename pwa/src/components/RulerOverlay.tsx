@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useFrame } from "@react-three/fiber";
 import { Html } from "@react-three/drei";
 import * as THREE from "three";
@@ -24,8 +24,6 @@ export function RulerOverlay() {
   const setOffsetFromRuler = useScene((s) => s.setOffsetFromRuler);
   const [readout, setReadout] = useState<Readout | null>(null);
   const [editing, setEditing] = useState<0 | 1 | 2 | null>(null);
-  const editingRef = useRef<0 | 1 | 2 | null>(null);
-  editingRef.current = editing;
 
   const ids = useMemo(
     () => selection.filter((id) => nodes[id] && !nodes[id].hidden),

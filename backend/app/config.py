@@ -7,8 +7,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _log = logging.getLogger("sculpo.config")
 
-_PLACEHOLDER_SECRETS = {"dev-secret-change-me", "changeme", "secret", ""}
-
 # Origins the native shells serve their bundled web app from.
 PACKAGED_APP_ORIGINS = ["app://sculpo"]
 
@@ -24,11 +22,10 @@ class Settings(BaseSettings):
 
     app_name: str = "Sculpo"
     environment: str = "production"
-    debug: bool = False
     database_url: str = "postgresql+asyncpg://app:app@db:5432/app"
-    secret_key: str = "dev-secret-change-me"
     allowed_origins: str = ""
-    app_url: str = "http://localhost:5199"
+    # Sessions are opaque random tokens stored hashed, and passwords are
+    # bcrypt: nothing here is signed, so there is no signing secret to set.
 
     # Comma-separated admin usernames. Admins can always register and manage
     # other users from the UI; everyone else needs an invite created there.
@@ -86,11 +83,6 @@ class Settings(BaseSettings):
 
     def validate_production(self) -> None:
         if self.environment == "production":
-            if len(self.secret_key) < 32 or self.secret_key in _PLACEHOLDER_SECRETS:
-                raise RuntimeError(
-                    "Refusing to start: SECRET_KEY is missing or a placeholder. "
-                    "Set a strong 32+ character secret."
-                )
             if not self.admin_user_set:
                 raise RuntimeError(
                     "Refusing to start: ADMIN_USERS is empty — nobody would be able "

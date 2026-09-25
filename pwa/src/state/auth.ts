@@ -2,6 +2,7 @@ import { create } from "zustand";
 import {
   api,
   getServerUrl,
+  offlineMode,
   getToken,
   setServerUrl,
   setToken,
@@ -43,6 +44,10 @@ export const useAuth = create<AuthState>()((set) => ({
 
   init: async () => {
     setUnauthorizedHandler(() => set({ status: "signed-out", user: null }));
+    if (offlineMode()) {
+      set({ status: "offline" });
+      return;
+    }
     if (!(await api.available())) {
       // A saved server URL that no longer answers must not strand a browser
       // that is itself being served by a Sculpo server. The usual way in:
