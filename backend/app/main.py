@@ -4,16 +4,51 @@ from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from sqlalchemy import text
+import logging
+
+from sqlalchemy import select, text
 
 from app.config import settings
-from app.database import engine
+from app.database import SessionLocal, engine
+from app.models import User
 from app.routers import admin, auth, projects
+
+_log = logging.getLogger("sculpo.startup")
+
+
+async def unclaimed_admin_names() -> set[str]:
+    """Admin usernames nobody has registered yet."""
+    async with SessionLocal() as db:
+        taken = set(
+            (await db.execute(select(User.username).where(User.username.in_(settings.admin_user_set))))
+            .scalars()
+            .all()
+        )
+    return settings.admin_user_set - taken
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings.validate_production()
+    # With no signup secret, an admin name nobody has registered is up for
+    # grabs by whoever reaches the server first. That is only a risk while
+    # it is unclaimed: an instance whose admin has long since registered
+    # must keep running. So the refusal looks at the database, not just
+    # the config — a first deployment stops, an established one does not.
+    if (
+        settings.environment == "production"
+        and not settings.admin_signup_secret
+        and not settings.allow_open_admin_signup
+    ):
+        unclaimed = await unclaimed_admin_names()
+        if unclaimed:
+            names = ", ".join(sorted(unclaimed))
+            raise RuntimeError(
+                f"Refusing to start: ADMIN_SIGNUP_SECRET is empty and {names} is not "
+                "registered yet, so whoever registers it first would become an admin. "
+                "Set ADMIN_SIGNUP_SECRET, or set ALLOW_OPEN_ADMIN_SIGNUP=true if this "
+                "instance is only reachable from a trusted network."
+            )
     yield
     await engine.dispose()
 

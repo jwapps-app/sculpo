@@ -90,21 +90,14 @@ class Settings(BaseSettings):
                 )
             # An empty value looks identical to a set one in a compose file,
             # and the difference is who owns the instance — so say which it
-            # is, every boot, where it can actually be checked. And refuse to
-            # run unclaimed unless the operator has said the network is
-            # trusted: a first deployment reachable from outside would
-            # otherwise hand its admin account to whoever registers first.
+            # is, every boot, where it can actually be checked. Whether an
+            # empty value is dangerous depends on the database (an admin
+            # name nobody has registered yet), so that decision is made at
+            # startup, in main.py, once the database is reachable.
             names = ", ".join(sorted(self.admin_user_set))
             if self.admin_signup_secret:
                 _log.info(
                     "ADMIN_SIGNUP_SECRET is set — registering %s requires it.", names
-                )
-            elif not self.allow_open_admin_signup:
-                raise RuntimeError(
-                    "Refusing to start: ADMIN_SIGNUP_SECRET is empty, so whoever "
-                    f"registers {names} first would become an admin. Set it, or set "
-                    "ALLOW_OPEN_ADMIN_SIGNUP=true if this instance is only reachable "
-                    "from a trusted network."
                 )
             else:
                 _log.warning(
