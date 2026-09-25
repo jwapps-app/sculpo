@@ -24,6 +24,32 @@ const SOFT_LIMIT = 300_000;
 const TARGET_TRIANGLES = 250_000;
 export const KEEP_LIMIT = 1_500_000;
 const HARD_LIMIT = 5_000_000;
+// Read nothing bigger than this: a binary STL at the triangle limit is
+// 250 MB, and text formats are far less dense than that.
+const MAX_FILE_BYTES = 400_000_000;
+
+/** Refuses a file by its size, or by a binary STL's own triangle count,
+ *  before any of it is parsed — parsing is what runs the browser out of
+ *  memory, and it happens on the UI thread. */
+async function checkBeforeParsing(file: File, ext: string): Promise<void> {
+  if (file.size > MAX_FILE_BYTES) {
+    throw new Error(
+      `File is ${(file.size / 1e6).toFixed(0)} MB — beyond what the browser can process (limit ${MAX_FILE_BYTES / 1e6} MB).`,
+    );
+  }
+  if (ext === "stl" && file.size >= 84) {
+    // A binary STL says how many triangles it holds at byte 80. ASCII
+    // files start with "solid"; a binary one can too, so only trust the
+    // count when it matches the file's length exactly.
+    const head = new DataView(await file.slice(0, 84).arrayBuffer());
+    const declared = head.getUint32(80, true);
+    if (84 + declared * 50 === file.size && declared > HARD_LIMIT) {
+      throw new Error(
+        `Mesh has ${declared.toLocaleString()} triangles — beyond what the browser can process (limit ${HARD_LIMIT.toLocaleString()}).`,
+      );
+    }
+  }
+}
 
 async function decimate(
   geo: THREE.BufferGeometry,
@@ -119,8 +145,9 @@ export async function importMeshFile(
   file: File,
   decideSimplify?: (triangles: number) => boolean,
 ): Promise<ImportedMesh> {
-  const ext = file.name.split(".").pop()?.toLowerCase();
+  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
   const baseName = file.name.replace(/\.[^.]+$/, "");
+  await checkBeforeParsing(file, ext);
   if (ext === "stl") {
     const geo = new STLLoader().parse(await file.arrayBuffer());
     return finalize(geo, baseName, decideSimplify);

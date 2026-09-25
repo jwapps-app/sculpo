@@ -61,13 +61,18 @@ export function threadGeometry(params: {
   internal: boolean;
 }): THREE.BufferGeometry {
   const { diameter, pitch, length, internal } = params;
-  const seg = Math.max(24, Math.min(256, Math.round(params.segments)));
+  let seg = Math.max(24, Math.min(256, Math.round(params.segments)));
   const majorR = diameter / 2;
   // ISO metric: thread height H = 0.866*pitch; truncated to 5/8 H.
   const depth = Math.min(0.613 * pitch, majorR * 0.6);
   const coreR = majorR - depth;
   const rowsPerPitch = 12;
-  const heightRows = Math.max(8, Math.ceil((length / pitch) * rowsPerPitch));
+  // Bounded: a long thread with a tiny pitch would otherwise ask for
+  // millions of rows. Past a budget of quads the ring gets coarser rather
+  // than the mesh bigger — a thread that fine has no visible facets anyway.
+  const heightRows = Math.min(4000, Math.max(8, Math.ceil((length / pitch) * rowsPerPitch)));
+  const QUAD_BUDGET = 250_000;
+  seg = Math.max(24, Math.min(seg, Math.floor(QUAD_BUDGET / heightRows)));
   const rows: THREE.Vector3[][] = [];
 
   // Radius at a given height for a given angle: position within the thread

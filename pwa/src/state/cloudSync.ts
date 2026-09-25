@@ -11,7 +11,7 @@ import {
   type LocalSaveState,
   type StoredDoc,
 } from "../lib/localStore";
-import { parseProjectFile } from "../lib/projectFile";
+import { validateProject } from "../lib/projectFile";
 import { useScene } from "./store";
 import { setSignOutHooks, useAuth } from "./auth";
 import type { Project } from "../types/scene";
@@ -342,7 +342,7 @@ async function restore(): Promise<void> {
   const legacy = takeLegacyDoc();
   if (legacy) {
     try {
-      const project = parseProjectFile(JSON.stringify(legacy.project));
+      const project = validateProject(legacy.project);
       if (project.rootOrder.length) {
         await writeDoc(`current:${anonymous}`, {
           token: `legacy-${Date.now()}`,
@@ -387,7 +387,7 @@ async function restore(): Promise<void> {
   if (own && own.project.rootOrder.length) {
     let project: Project;
     try {
-      project = parseProjectFile(JSON.stringify(own.project));
+      project = validateProject(own.project);
     } catch {
       project = own.project;
     }
@@ -427,7 +427,7 @@ async function reconcile(cloudId: string, revision: number | null, token: string
     if (doc && isDirty(doc)) return; // edited meanwhile; the save will sort it out
     const full = await api.getProject(cloudId);
     if (useScene.getState().docToken !== token) return;
-    useScene.getState().loadProject(full.data, full.id, full.revision);
+    useScene.getState().loadProject(validateProject(full.data), full.id, full.revision);
     declareDoc({ synced: true });
   } catch {
     /* offline; the local copy stands */

@@ -3,9 +3,11 @@ import { temporal } from "zundo";
 import * as THREE from "three";
 import type { GroupNode, PrimitiveKind, Project, SceneNode, ShapeNode, Vec3 } from "../types/scene";
 import { emptyProject, isGroup } from "../types/scene";
-import { bottomOffset, footprint, makeShape } from "../lib/primitives";
+import { bottomOffset, buildGeometry, footprint, makeShape } from "../lib/primitives";
 import { newId } from "../lib/id";
-import { composeMatrix, decomposeMatrix } from "../lib/transform";
+import { bakeTransform, composeMatrix, decomposeMatrix, isDecomposable } from "../lib/transform";
+import { encodeMeshParams } from "../lib/meshData";
+import { MAX_NAME_CHARS } from "../lib/projectFile";
 import { workplaneNormal, type Workplane } from "../lib/workplane";
 import { sceneApi } from "../lib/sceneApi";
 import { planAlign } from "../lib/align";
@@ -93,6 +95,35 @@ function foldBoxScale<T extends SceneNode>(node: T): T {
     params: { ...node.params, ...sized },
     scale: node.scale.map((v) => (v < 0 ? -1 : 1)) as Vec3,
   };
+}
+
+// While a group is being edited in place, its children's positions are in
+// the group's frame, but bounds, workplanes and nudges are in world space.
+// Every command that applies a world-space change to a node goes through
+// here: the change is expressed in the node's parent frame first, so a +1 mm
+// nudge along world X moves a child of a group turned 90° by +1 mm along
+// world X, not along the group's own X.
+function parentMatrixOf(s: { editingGroupId: string | null; project: Project }, id: string): THREE.Matrix4 | null {
+  const g = s.editingGroupId ? s.project.nodes[s.editingGroupId] : null;
+  if (g && isGroup(g) && g.childIds.includes(id)) return composeMatrix(g.position, g.rotation, g.scale);
+  return null;
+}
+
+/** A world-space displacement as the node's parent sees it. */
+function toParentVector(v: THREE.Vector3, parent: THREE.Matrix4 | null): Vec3 {
+  if (!parent) return [v.x, v.y, v.z];
+  const linear = new THREE.Matrix3().setFromMatrix4(parent.clone().invert());
+  const out = v.clone().applyMatrix3(linear);
+  return [out.x, out.y, out.z];
+}
+
+/** A node after a world-space matrix has been applied to it. */
+function applyWorldDelta<T extends SceneNode>(node: T, delta: THREE.Matrix4, parent: THREE.Matrix4 | null): T {
+  const local = composeMatrix(node.position, node.rotation, node.scale);
+  const m = parent
+    ? parent.clone().invert().multiply(delta).multiply(parent).multiply(local)
+    : delta.clone().multiply(local);
+  return foldBoxScale({ ...node, ...decomposeMatrix(m) });
 }
 
 function cloneSubtree(
@@ -564,6 +595,9 @@ export const useScene = create<SceneState>()(
       updateShape: (id, patch) => {
         const node = get().project.nodes[id];
         if (!node || isGroup(node)) return;
+        // A locked shape takes no edits; the only thing that may change on
+        // it is the lock itself.
+        if (node.locked && !("locked" in patch)) return;
         set((s) => ({
           project: {
             ...s.project,
@@ -581,7 +615,7 @@ export const useScene = create<SceneState>()(
           const nodes = { ...s.project.nodes };
           for (const e of entries) {
             const node = nodes[e.id];
-            if (!node) continue;
+            if (!node || node.locked) continue;
             nodes[e.id] = foldBoxScale({
               ...node,
               position: e.position,
@@ -601,13 +635,10 @@ export const useScene = create<SceneState>()(
           const nodes = { ...s.project.nodes };
           for (const id of ids) {
             const n = nodes[id];
+            const d = toParentVector(new THREE.Vector3(...delta), parentMatrixOf(s, id));
             nodes[id] = {
               ...n,
-              position: [
-                n.position[0] + delta[0],
-                n.position[1] + delta[1],
-                n.position[2] + delta[2],
-              ],
+              position: [n.position[0] + d[0], n.position[1] + d[1], n.position[2] + d[2]],
             };
           }
           return { project: { ...s.project, nodes } };
@@ -625,9 +656,13 @@ export const useScene = create<SceneState>()(
           const nodes = { ...s.project.nodes };
           for (const { id, shift } of plan.moves) {
             const n = nodes[id];
-            const position = [...n.position] as Vec3;
-            position[axis] += shift;
-            nodes[id] = { ...n, position };
+            const world = new THREE.Vector3();
+            world.setComponent(axis, shift);
+            const d = toParentVector(world, parentMatrixOf(s, id));
+            nodes[id] = {
+              ...n,
+              position: [n.position[0] + d[0], n.position[1] + d[1], n.position[2] + d[2]],
+            };
           }
           return { project: { ...s.project, nodes } };
         });
@@ -651,11 +686,7 @@ export const useScene = create<SceneState>()(
         set((s) => {
           const nodes = { ...s.project.nodes };
           for (const { id } of items) {
-            const n = nodes[id];
-            const m = reflect
-              .clone()
-              .multiply(composeMatrix(n.position, n.rotation, n.scale));
-            nodes[id] = foldBoxScale({ ...n, ...decomposeMatrix(m) });
+            nodes[id] = applyWorldDelta(nodes[id], reflect, parentMatrixOf(s, id));
           }
           return { project: { ...s.project, nodes } };
         });
@@ -687,13 +718,10 @@ export const useScene = create<SceneState>()(
             }
             const shift = planeD - minDot;
             const n = nodes[id];
+            const d = toParentVector(normal.clone().multiplyScalar(shift), parentMatrixOf(s, id));
             nodes[id] = {
               ...n,
-              position: [
-                n.position[0] + normal.x * shift,
-                n.position[1] + normal.y * shift,
-                n.position[2] + normal.z * shift,
-              ],
+              position: [n.position[0] + d[0], n.position[1] + d[1], n.position[2] + d[2]],
             };
           }
           return { project: { ...s.project, nodes } };
@@ -871,6 +899,7 @@ export const useScene = create<SceneState>()(
 
       // Groups may override their inherited color; undefined restores it.
       setNodeColor: (id, color) => {
+        if (get().project.nodes[id]?.locked) return;
         set((s) => {
           const node = s.project.nodes[id];
           if (!node) return {};
@@ -907,12 +936,7 @@ export const useScene = create<SceneState>()(
         set((s) => {
           const nodes = { ...s.project.nodes };
           for (const id of ids) {
-            const n = nodes[id];
-            const world = delta
-              .clone()
-              .multiply(composeMatrix(n.position, n.rotation, n.scale));
-            const t = decomposeMatrix(world);
-            nodes[id] = foldBoxScale({ ...n, position: t.position, rotation: t.rotation, scale: t.scale });
+            nodes[id] = applyWorldDelta(nodes[id], delta, parentMatrixOf(s, id));
           }
           return { project: { ...s.project, nodes } };
         });
@@ -977,7 +1001,7 @@ export const useScene = create<SceneState>()(
         const { selection, project } = get();
         const groups = selection.filter((id) => {
           const n = project.nodes[id];
-          return n && isGroup(n) && project.rootOrder.includes(id);
+          return n && isGroup(n) && !n.locked && project.rootOrder.includes(id);
         });
         if (groups.length === 0) return;
         set((s) => {
@@ -993,8 +1017,27 @@ export const useScene = create<SceneState>()(
               const child = nodes[cid];
               if (!child) continue;
               const cm = composeMatrix(child.position, child.rotation, child.scale);
-              const t = decomposeMatrix(gm.clone().multiply(cm));
-              nodes[cid] = foldBoxScale({ ...child, ...t });
+              const m = gm.clone().multiply(cm);
+              // A group scaled unevenly around a child turned at an angle
+              // leaves a shear no position/rotation/scale can hold. Rather
+              // than let the shape change, bake it: the child becomes a mesh
+              // with the transform in its vertices.
+              if (!isDecomposable(m) && !isGroup(child)) {
+                const geo = buildGeometry(child);
+                if (geo) {
+                  const baked = bakeTransform(geo, m);
+                  nodes[cid] = {
+                    ...child,
+                    kind: "mesh",
+                    params: { ...encodeMeshParams(baked), name: `${child.kind} (ungrouped)` },
+                    position: [0, 0, 0],
+                    rotation: [0, 0, 0],
+                    scale: [1, 1, 1],
+                  };
+                  continue;
+                }
+              }
+              nodes[cid] = foldBoxScale({ ...child, ...decomposeMatrix(m) });
             }
             rootOrder = rootOrder.flatMap((id) => (id === gid ? group.childIds : [id]));
             freed.push(...group.childIds);
@@ -1007,7 +1050,8 @@ export const useScene = create<SceneState>()(
         });
       },
 
-      setProjectName: (name) => set((s) => ({ project: { ...s.project, name } })),
+      setProjectName: (name) =>
+        set((s) => ({ project: { ...s.project, name: name.slice(0, MAX_NAME_CHARS) } })),
 
       loadProject: (project, cloudId = null, revision = null) => {
         set({

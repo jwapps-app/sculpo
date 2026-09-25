@@ -5,6 +5,7 @@ import type { ShapeNode } from "../types/scene";
 import { buildGeometry } from "../lib/primitives";
 import { useManifoldLoaded } from "../lib/manifold";
 import { workplaneFromHit } from "../lib/workplane";
+import { worldNormal } from "../lib/transform";
 import { gizmoState } from "../lib/gizmoState";
 import { useScene } from "../state/store";
 
@@ -23,10 +24,7 @@ export function handleMeshClick(e: ThreeEvent<MouseEvent>, nodeId: string) {
     return;
   if (s.workplaneArmed) {
     if (e.face) {
-      const normal = e.face.normal
-        .clone()
-        .transformDirection(e.object.matrixWorld);
-      s.setWorkplane(workplaneFromHit(e.point, normal));
+      s.setWorkplane(workplaneFromHit(e.point, worldNormal(e.face.normal, e.object.matrixWorld)));
     }
     return;
   }

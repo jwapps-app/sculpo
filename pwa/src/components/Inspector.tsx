@@ -514,6 +514,14 @@ function RotateControl() {
   );
 }
 
+function LockedNote() {
+  return (
+    <p className="rounded border border-neutral-200 bg-neutral-50 px-2 py-1 text-xs text-neutral-500">
+      Locked — unlock below to edit.
+    </p>
+  );
+}
+
 function LockHideRow() {
   const toggleLockSelected = useScene((s) => s.toggleLockSelected);
   const hideSelected = useScene((s) => s.hideSelected);
@@ -633,9 +641,11 @@ export function Inspector() {
         <div className="text-sm text-neutral-500">
           {selected.length} objects selected
         </div>
-        <SizeFields ids={selection} units={units} />
-        <AlignPanel />
-        <FlipRow />
+        <fieldset disabled={selected.every((n) => n.locked)} className="contents">
+          <SizeFields ids={selection} units={units} />
+          <AlignPanel />
+          <FlipRow />
+        </fieldset>
         <LockHideRow />
       </div>
     );
@@ -655,7 +665,9 @@ export function Inspector() {
               These holes act as one. Group it with a solid to cut them all at once.
             </p>
           )}
+          {group.locked && <LockedNote />}
         </div>
+        <fieldset disabled={!!group.locked} className="contents">
         {!holeGroup && (
         <label className="flex items-center justify-between gap-2 text-sm">
           <span className="text-neutral-500">Color</span>
@@ -695,6 +707,7 @@ export function Inspector() {
           onCommit={(v) => setTransform(group.id, group.position, group.rotation, v)}
         />
         <FlipRow />
+        </fieldset>
         <LockHideRow />
         <p className="text-xs text-neutral-400">
           Double-click to edit the shapes inside; ⇧⌘G to ungroup.
@@ -707,6 +720,8 @@ export function Inspector() {
 
   return (
     <div className="flex w-56 flex-col gap-4 overflow-y-auto border-l border-neutral-200 bg-white p-3">
+      {node.locked && <LockedNote />}
+      <fieldset disabled={!!node.locked} className="contents">
       <div className="flex items-center justify-between">
         <span className="text-sm font-semibold capitalize">{node.kind}</span>
         <div className="flex overflow-hidden rounded-md border border-neutral-300 text-xs">
@@ -763,6 +778,7 @@ export function Inspector() {
         </button>
       )}
       <FlipRow />
+      </fieldset>
       <LockHideRow />
     </div>
   );

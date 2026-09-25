@@ -4,6 +4,7 @@ import { TextGeometry } from "three/addons/geometries/TextGeometry.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import type { PrimitiveKind, ShapeNode } from "../types/scene";
 import { newId } from "./id";
+import { clampParam, MAX_TEXT_CHARS } from "./paramLimits";
 import { decodeMeshGeometry } from "./meshData";
 import { GEAR_CURVE_SEGMENTS, gearGeometry, gearShape, threadGeometry } from "./generators";
 import {
@@ -99,7 +100,10 @@ export const PALETTE_COLORS: Record<PrimitiveKind, string> = {
 
 function num(params: Record<string, number | string>, key: string, fallback: number): number {
   const v = params[key];
-  return typeof v === "number" && Number.isFinite(v) ? v : fallback;
+  // Clamped here as well as on the way in, so a value that slipped past
+  // validation (an older file, a hand-edited one) still cannot ask for a
+  // billion segments.
+  return typeof v === "number" && Number.isFinite(v) ? clampParam(key, v) : fallback;
 }
 
 // Extrudes a 2D profile (in the XY plane) along Z and centers it.
@@ -278,7 +282,7 @@ function computeSpec(node: Pick<ShapeNode, "kind" | "params">): RoundSpec | null
       return centredExtrusion([[[-w / 2, 0], [w / 2, 0], apex]], d, SHARP_ANGLE, ROTATE_UP);
     }
     case "text": {
-      const value = String(p.value ?? "").trim() || "Text";
+      const value = String(p.value ?? "").trim().slice(0, MAX_TEXT_CHARS) || "Text";
       const shapes = getFont(String(p.font ?? "sans")).generateShapes(value, num(p, "size", 10));
       return centredExtrusion(contoursOf(shapes, 4), num(p, "depth", 5));
     }
@@ -435,7 +439,7 @@ export function buildGeometry(node: ShapeNode): THREE.BufferGeometry | null {
       break;
     }
     case "text": {
-      const value = String(p.value ?? "").trim() || "Text";
+      const value = String(p.value ?? "").trim().slice(0, MAX_TEXT_CHARS) || "Text";
       // Lies flat in the XY plane, extruded up along Z, centered on its origin.
       geo = new TextGeometry(value, {
         font: getFont(String(p.font ?? "sans")),

@@ -54,6 +54,35 @@ export function flipWinding(g: THREE.BufferGeometry) {
   }
 }
 
+/**
+ * A face normal taken into world space. Directions transform by the
+ * inverse transpose of the matrix, not the matrix itself: under an uneven
+ * scale, transformDirection tilts a sloped face's normal the wrong way, and
+ * anything placed against that face leans with it.
+ */
+export function worldNormal(local: THREE.Vector3, matrixWorld: THREE.Matrix4): THREE.Vector3 {
+  return local
+    .clone()
+    .applyNormalMatrix(new THREE.Matrix3().getNormalMatrix(matrixWorld))
+    .normalize();
+}
+
+/**
+ * Whether a matrix can be written as position, rotation and scale without
+ * loss. A non-uniformly scaled parent around a rotated child produces
+ * shear, which those three cannot express.
+ */
+export function isDecomposable(m: THREE.Matrix4): boolean {
+  const { position, rotation, scale } = decomposeMatrix(m);
+  const back = composeMatrix(position, rotation, scale);
+  const a = m.elements;
+  const b = back.elements;
+  let magnitude = 1e-6;
+  for (let i = 0; i < 16; i++) magnitude = Math.max(magnitude, Math.abs(a[i]));
+  for (let i = 0; i < 16; i++) if (Math.abs(a[i] - b[i]) > 1e-5 * magnitude) return false;
+  return true;
+}
+
 export function decomposeMatrix(m: THREE.Matrix4): {
   position: Vec3;
   rotation: Vec3;

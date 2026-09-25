@@ -46,6 +46,11 @@ export function decodeMeshGeometry(
       Math.floor(posBytes.byteLength / 4),
     );
     if (positions.length < 9 || positions.length % 3 !== 0) return null;
+    // Every coordinate a real number: a NaN or an infinity in a vertex
+    // poisons bounds, booleans and export alike.
+    for (let i = 0; i < positions.length; i++) {
+      if (!Number.isFinite(positions[i])) return null;
+    }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute("position", new THREE.BufferAttribute(positions.slice(), 3));
     if (typeof params.idx === "string") {
@@ -55,6 +60,12 @@ export function decodeMeshGeometry(
         idxBytes.byteOffset,
         Math.floor(idxBytes.byteLength / 4),
       );
+      // Whole triangles, every corner an existing vertex.
+      if (indices.length < 3 || indices.length % 3 !== 0) return null;
+      const vertexCount = positions.length / 3;
+      for (let i = 0; i < indices.length; i++) {
+        if (indices[i] >= vertexCount) return null;
+      }
       geo.setIndex(new THREE.BufferAttribute(indices.slice(), 1));
     }
     geo.computeVertexNormals();

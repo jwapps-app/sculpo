@@ -18,6 +18,7 @@ import {
   type ProjectMeta,
 } from "../lib/api";
 import { useScene } from "../state/store";
+import { validateProject } from "../lib/projectFile";
 import { useAuth } from "../state/auth";
 import { captureIfMissing, declareDoc, syncNow, useCloudSync } from "../state/cloudSync";
 import { ServerSettings } from "./ServerSettings";
@@ -127,7 +128,7 @@ export function CloudPanel() {
   const openFromCloud = (id: string) =>
     run(async () => {
       const full = await api.getProject(id);
-      loadProject(full.data, full.id, full.revision);
+      loadProject(validateProject(full.data), full.id, full.revision);
       // Freshly opened = already in sync; don't immediately re-upload it.
       declareDoc({ synced: true });
       // ...but do give it a preview if it never got one.

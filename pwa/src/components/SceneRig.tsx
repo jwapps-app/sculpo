@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useThree } from "@react-three/fiber";
 import * as THREE from "three";
+import { worldNormal } from "../lib/transform";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import { sceneApi, type ViewName } from "../lib/sceneApi";
 import type { Vec3 } from "../types/scene";
@@ -351,7 +352,7 @@ export function SceneRig() {
       if (hit && hit.face) {
         // Glide along the face: seat the shape's bottom on the surface,
         // oriented to the face normal, but never sunk below the floor.
-        const normal = hit.face.normal.clone().transformDirection(hit.object.matrixWorld).normalize();
+        const normal = worldNormal(hit.face.normal, hit.object.matrixWorld);
         obj.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
         obj.position.copy(hit.point).addScaledVector(normal, bottom);
         if (geo.boundingBox) {
@@ -404,7 +405,7 @@ export function SceneRig() {
       if (hit && hit.face) {
         // Seat the ghost on the hovered face, oriented to its normal, but
         // never sunk below the floor.
-        const normal = hit.face.normal.clone().transformDirection(hit.object.matrixWorld).normalize();
+        const normal = worldNormal(hit.face.normal, hit.object.matrixWorld);
         placementState.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
         placementState.position.copy(hit.point).addScaledVector(normal, fp.bottom);
         const m = new THREE.Matrix4().makeRotationFromQuaternion(placementState.quaternion).elements;

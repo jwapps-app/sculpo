@@ -7,6 +7,7 @@ import { buildGeometry } from "./primitives";
 import { evaluateGroup } from "./csg";
 import { asClosedSolid, manifoldLoaded } from "./manifold";
 import { downloadBlob, safeFilename } from "./download";
+import { bakeTransform, composeMatrix } from "./transform";
 
 export type ExportFormat = "stl" | "obj";
 
@@ -52,11 +53,15 @@ export function exportSceneStl(project: Project, options: ExportOptions = {}): E
     }
     if (!geometry || !geometry.getAttribute("position")?.count) continue;
 
-    const mesh = new THREE.Mesh(geometry);
-    mesh.position.set(...node.position);
-    mesh.rotation.set(...node.rotation);
-    mesh.scale.set(...node.scale);
-    scene.add(mesh);
+    // Bake the node's transform into the vertices rather than setting it on
+    // the mesh: the exporters apply a mesh's matrix to positions but never
+    // reverse its winding, so a mirrored shape (negative scale) came out
+    // inside-out — a cube of −8000 mm³ as a slicer sees it.
+    const baked = bakeTransform(
+      geometry,
+      composeMatrix(node.position, node.rotation, node.scale),
+    );
+    scene.add(new THREE.Mesh(baked));
     exported++;
   }
 
