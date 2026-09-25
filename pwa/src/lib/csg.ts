@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { Brush, Evaluator, ADDITION, SUBTRACTION } from "three-bvh-csg";
-import type { GroupNode, Project, ShapeNode } from "../types/scene";
+import type { GroupNode, Project, SceneNode, ShapeNode } from "../types/scene";
 import { isGroup, nodeRole } from "../types/scene";
 import { buildGeometry } from "./primitives";
 import { bakeTransform, composeMatrix } from "./transform";
@@ -101,26 +101,12 @@ export function evaluateGroup(
       geo = evaluateGroup(child, nodes);
       role = nodeRole(child, nodes);
     } else {
-      geo = buildGeometry(child);
-      role = child.role;
-      // A glyph or SVG outline that overlaps itself is not a closed solid.
-      // Rebuilt here, in its own flat frame, before the transform bakes in.
-      // Only flat extrusions can be rebuilt, so only they are probed: the
-      // probe is a full conversion, a second per 700k triangles, and a scan
-      // would pay it here and again in the cut for nothing.
-      if (geo && manifoldLoaded() && isFlatExtrusion(geo) && !isClosedSolid(geo)) {
-        geo = repairExtrusion(geo) ?? geo;
-      }
+      const prepared = prepareChild(child);
+      geo = prepared.geo;
+      role = prepared.role;
     }
     if (!geo) continue;
-
-    // Bake the child's full transform (including non-uniform or mirrored
-    // scale) into the geometry so the boolean runs on clean world-space meshes.
-    const baked = bakeTransform(
-      geo,
-      composeMatrix(child.position, child.rotation, child.scale),
-    );
-    (role === "solid" ? solids : holes).push(baked);
+    (role === "solid" ? solids : holes).push(bakeChild(child, geo));
   }
 
   // Nothing solid: a hole group. Its shape is the union of its holes.
@@ -133,7 +119,28 @@ export function evaluateGroup(
   return cutGroupBvh(add, cut);
 }
 
-function cutGroupBvh(
+/** A shape child's geometry, repaired where a flat outline needs it, and
+ *  its role. Shared by the in-thread and the worker evaluation. */
+export function prepareChild(child: ShapeNode): { geo: THREE.BufferGeometry | null; role: "solid" | "hole" } {
+  let geo = buildGeometry(child);
+  // A glyph or SVG outline that overlaps itself is not a closed solid.
+  // Rebuilt here, in its own flat frame, before the transform bakes in.
+  // Only flat extrusions can be rebuilt, so only they are probed: the
+  // probe is a full conversion, a second per 700k triangles, and a scan
+  // would pay it here and again in the cut for nothing.
+  if (geo && manifoldLoaded() && isFlatExtrusion(geo) && !isClosedSolid(geo)) {
+    geo = repairExtrusion(geo) ?? geo;
+  }
+  return { geo, role: child.role };
+}
+
+/** The child's full transform (including non-uniform or mirrored scale)
+ *  baked into its geometry, so the boolean runs on clean world-space meshes. */
+export function bakeChild(child: SceneNode, geo: THREE.BufferGeometry): THREE.BufferGeometry {
+  return bakeTransform(geo, composeMatrix(child.position, child.rotation, child.scale));
+}
+
+export function cutGroupBvh(
   solids: THREE.BufferGeometry[],
   holes: THREE.BufferGeometry[],
 ): THREE.BufferGeometry {

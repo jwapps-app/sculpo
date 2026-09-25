@@ -1,8 +1,9 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import * as THREE from "three";
 import type { GroupNode } from "../types/scene";
 import { nodeRole } from "../types/scene";
-import { evaluateGroup, firstSolidColor, subtreeSignature } from "../lib/csg";
+import { firstSolidColor, subtreeSignature } from "../lib/csg";
+import { evaluateGroupAsync } from "../lib/csgAsync";
 import { useManifoldLoaded } from "../lib/manifold";
 import { useScene } from "../state/store";
 import { handleMeshClick, MeshEdges } from "./ShapeMesh";
@@ -16,12 +17,28 @@ export function GroupMesh({ node, dimmed = false }: { node: GroupNode; dimmed?: 
   // Groups cut before the boolean engine finished loading get cut again by it.
   const engineReady = useManifoldLoaded();
 
-  // Re-runs only when a descendant changes, not when the group moves.
-  const geometry = useMemo(
-    () => evaluateGroup(node, nodes),
+  // Re-runs only when a descendant changes, not when the group moves. The
+  // boolean runs in a worker; the previous shape stays on screen until the
+  // new one is ready, so a big cut never freezes the page or blanks the
+  // group. A result for a signature the group has since moved past is
+  // dropped.
+  const [geometry, setGeometry] = useState<THREE.BufferGeometry | null>(null);
+  useEffect(() => {
+    let live = true;
+    evaluateGroupAsync(node, nodes)
+      .then((geo) => {
+        if (live) setGeometry(geo);
+        else geo?.dispose();
+      })
+      .catch((err) => {
+        console.warn("Could not evaluate group", err);
+        if (live) setGeometry(null);
+      });
+    return () => {
+      live = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [signature, engineReady],
-  );
+  }, [signature, engineReady]);
   useEffect(() => () => geometry?.dispose(), [geometry]);
   const inherited = useMemo(
     () => firstSolidColor(node, nodes),

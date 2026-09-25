@@ -5,6 +5,7 @@ import type { Project } from "../types/scene";
 import { isGroup, nodeRole } from "../types/scene";
 import { buildGeometry } from "./primitives";
 import { evaluateGroup } from "./csg";
+import { peekEvaluated } from "./csgAsync";
 import { asClosedSolid, manifoldLoaded } from "./manifold";
 import { downloadBlob, safeFilename } from "./download";
 import { bakeTransform, composeMatrix } from "./transform";
@@ -45,7 +46,9 @@ export function exportSceneStl(project: Project, options: ExportOptions = {}): E
       skippedHoles++;
       continue;
     } else if (isGroup(node)) {
-      geometry = evaluateGroup(node, project.nodes);
+      // The viewport has usually evaluated this group already, in a worker.
+      const known = peekEvaluated(node, project.nodes);
+      geometry = known === undefined ? evaluateGroup(node, project.nodes) : known;
     } else {
       geometry = buildGeometry(node);
       // Lone text and SVG shapes get the same outline repair groups do.

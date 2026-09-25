@@ -179,6 +179,7 @@ export function Toolbar() {
 
   const fileInput = useRef<HTMLInputElement>(null);
   const importInput = useRef<HTMLInputElement>(null);
+  const [importing, setImporting] = useState<{ name: string; cancel: () => void } | null>(null);
   const [menu, setMenu] = useState<"mirror" | "export" | "grid" | "file" | null>(null);
   // A finger needs room a cursor does not, and the toolbar has none to spare.
   // On touch the settings and file groups fold into menus so what is left
@@ -567,6 +568,21 @@ export function Toolbar() {
           e.target.value = "";
         }}
       />
+      {importing && (
+        <div className="fixed left-1/2 top-14 z-30 flex -translate-x-1/2 items-center gap-3 rounded bg-neutral-800/95 px-3 py-1.5 text-xs text-white shadow-lg">
+          <span className="h-2 w-2 animate-pulse rounded-full bg-amber-400" />
+          Importing {importing.name}…
+          <button
+            onClick={() => {
+              importing.cancel();
+              setImporting(null);
+            }}
+            className="rounded bg-white/20 px-2 py-0.5 hover:bg-white/30"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
       <input
         ref={importInput}
         type="file"
@@ -577,18 +593,25 @@ export function Toolbar() {
           e.target.value = "";
           if (!file) return;
           try {
-            // The importer carries three loaders and the WebAssembly
-            // decimator; most sessions never import, so it loads on first use.
-            const { importMeshFile } = await import("../lib/importMesh");
-            const { params, name, triangles, simplifiedFrom, deviationMm } =
-              await importMeshFile(file, (tris) =>
-                confirm(
-                  `This mesh has ${tris.toLocaleString()} triangles.\n\n` +
-                    `OK — simplify to ~250,000 for smooth editing (the exact surface ` +
-                    `deviation is measured and reported).\n` +
-                    `Cancel — keep the full resolution (booleans and saves will be slower).`,
-                ),
-              );
+            // The importer runs in a worker: parsing and decimating a big
+            // scan no longer freezes the page, and it can be cancelled.
+            const { importMesh } = await import("../lib/importClient");
+            const handle = importMesh(file, (tris) =>
+              confirm(
+                `This mesh has ${tris.toLocaleString()} triangles.\n\n` +
+                  `OK — simplify to ~250,000 for smooth editing (the exact surface ` +
+                  `deviation is measured and reported).\n` +
+                  `Cancel — keep the full resolution (booleans and saves will be slower).`,
+              ),
+            );
+            setImporting({ name: file.name, cancel: handle.cancel });
+            let imported;
+            try {
+              imported = await handle.result;
+            } finally {
+              setImporting(null);
+            }
+            const { params, name, triangles, simplifiedFrom, deviationMm } = imported;
             addImportedMesh(params, name);
             if (simplifiedFrom) {
               const dev =
@@ -602,6 +625,7 @@ export function Toolbar() {
               );
             }
           } catch (err) {
+            if (err instanceof DOMException && err.name === "AbortError") return; // cancelled
             alert(err instanceof Error ? err.message : "Could not import the file.");
           }
         }}

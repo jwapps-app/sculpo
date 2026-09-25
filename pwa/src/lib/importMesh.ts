@@ -102,57 +102,26 @@ function stripToPosition(geo: THREE.BufferGeometry): THREE.BufferGeometry {
 const triCount = (geo: THREE.BufferGeometry) =>
   Math.round((geo.index ? geo.index.count : geo.getAttribute("position").count) / 3);
 
-// decideSimplify: asked when the mesh is heavy but keepable — return false to
-// keep the original resolution. Above KEEP_LIMIT decimation is mandatory.
-async function finalize(
-  geoIn: THREE.BufferGeometry,
-  name: string,
-  decideSimplify?: (triangles: number) => boolean,
-): Promise<ImportedMesh> {
-  // Weld duplicate vertices so booleans see a connected surface, then center
-  // on the origin (the node transform handles placement).
-  let geo = mergeVertices(stripToPosition(geoIn), 1e-4);
-  geo.center();
-  let triangles = triCount(geo);
-  if (triangles > HARD_LIMIT) {
-    throw new Error(
-      `Mesh has ${triangles.toLocaleString()} triangles — beyond what the browser can process (limit ${HARD_LIMIT.toLocaleString()}).`,
-    );
-  }
-  if (triangles < 1) throw new Error("No triangles found in the imported file.");
-
-  let simplifiedFrom: number | undefined;
-  let deviationMm: number | undefined;
-  if (triangles > SOFT_LIMIT) {
-    const mustSimplify = triangles > KEEP_LIMIT;
-    const wantSimplify = mustSimplify || !decideSimplify || decideSimplify(triangles);
-    if (wantSimplify) {
-      simplifiedFrom = triangles;
-      const result = await decimate(geo);
-      geo = result.geo;
-      deviationMm = result.deviationMm;
-      geo.center();
-      triangles = triCount(geo);
-      if (triangles < 1) {
-        throw new Error("Simplification failed — the mesh may be degenerate.");
-      }
-    }
-  }
-  return { params: encodeMeshParams(geo), name, triangles, simplifiedFrom, deviationMm };
+/** A parsed mesh, welded and centred, before any decision about its size. */
+export interface ParsedMesh {
+  geo: THREE.BufferGeometry;
+  name: string;
+  triangles: number;
+  /** Heavy enough that decimation is offered. */
+  maySimplify: boolean;
+  /** So heavy that decimation is required. */
+  mustSimplify: boolean;
 }
 
-export async function importMeshFile(
-  file: File,
-  decideSimplify?: (triangles: number) => boolean,
-): Promise<ImportedMesh> {
+/** Reads and parses the file. Everything here runs in the import worker. */
+export async function parseMeshFile(file: File): Promise<ParsedMesh> {
   const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
-  const baseName = file.name.replace(/\.[^.]+$/, "");
+  const name = file.name.replace(/\.[^.]+$/, "");
   await checkBeforeParsing(file, ext);
+  let loaded: THREE.BufferGeometry;
   if (ext === "stl") {
-    const geo = new STLLoader().parse(await file.arrayBuffer());
-    return finalize(geo, baseName, decideSimplify);
-  }
-  if (ext === "obj") {
+    loaded = new STLLoader().parse(await file.arrayBuffer());
+  } else if (ext === "obj") {
     const root = new OBJLoader().parse(await file.text());
     const parts: THREE.BufferGeometry[] = [];
     root.traverse((o) => {
@@ -162,9 +131,8 @@ export async function importMeshFile(
     if (parts.length === 0) throw new Error("No meshes found in the OBJ file.");
     const merged = mergeGeometries(parts.map((p) => p.toNonIndexed()));
     if (!merged) throw new Error("Could not merge the OBJ meshes.");
-    return finalize(merged, baseName, decideSimplify);
-  }
-  if (ext === "svg") {
+    loaded = merged;
+  } else if (ext === "svg") {
     const { paths } = new SVGLoader().parse(await file.text());
     const shapes = paths.flatMap((p) => SVGLoader.createShapes(p));
     if (shapes.length === 0) throw new Error("No closed paths found in the SVG.");
@@ -176,7 +144,52 @@ export async function importMeshFile(
     // SVG is Y-down; mirror it upright and restore winding.
     geo.applyMatrix4(new THREE.Matrix4().makeScale(1, -1, 1));
     flipWinding(geo);
-    return finalize(geo, baseName, decideSimplify);
+    loaded = geo;
+  } else {
+    throw new Error("Unsupported file type — import .stl, .obj, or .svg.");
   }
-  throw new Error("Unsupported file type — import .stl, .obj, or .svg.");
+  // Weld duplicate vertices so booleans see a connected surface, then center
+  // on the origin (the node transform handles placement).
+  const geo = mergeVertices(stripToPosition(loaded), 1e-4);
+  geo.center();
+  const triangles = triCount(geo);
+  if (triangles > HARD_LIMIT) {
+    throw new Error(
+      `Mesh has ${triangles.toLocaleString()} triangles — beyond what the browser can process (limit ${HARD_LIMIT.toLocaleString()}).`,
+    );
+  }
+  if (triangles < 1) throw new Error("No triangles found in the imported file.");
+  return { geo, name, triangles, maySimplify: triangles > SOFT_LIMIT, mustSimplify: triangles > KEEP_LIMIT };
+}
+
+/** Decimates if asked (or required), then encodes for the scene graph. */
+export async function finishImport(parsed: ParsedMesh, simplify: boolean): Promise<ImportedMesh> {
+  let { geo, triangles } = parsed;
+  let simplifiedFrom: number | undefined;
+  let deviationMm: number | undefined;
+  if (parsed.mustSimplify || (parsed.maySimplify && simplify)) {
+    simplifiedFrom = triangles;
+    const result = await decimate(geo);
+    geo = result.geo;
+    deviationMm = result.deviationMm;
+    geo.center();
+    triangles = triCount(geo);
+    if (triangles < 1) {
+      throw new Error("Simplification failed — the mesh may be degenerate.");
+    }
+  }
+  return { params: encodeMeshParams(geo), name: parsed.name, triangles, simplifiedFrom, deviationMm };
+}
+
+// decideSimplify: asked when the mesh is heavy but keepable — return false to
+// keep the original resolution. Above KEEP_LIMIT decimation is mandatory.
+// In-thread; the app uses the worker in importClient.ts and keeps this as
+// the fallback.
+export async function importMeshFile(
+  file: File,
+  decideSimplify?: (triangles: number) => boolean,
+): Promise<ImportedMesh> {
+  const parsed = await parseMeshFile(file);
+  const simplify = parsed.maySimplify && (!decideSimplify || decideSimplify(parsed.triangles));
+  return finishImport(parsed, simplify);
 }
