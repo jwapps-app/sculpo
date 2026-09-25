@@ -88,6 +88,11 @@ function activeDoc(): Doc | undefined {
 let localTimer: ReturnType<typeof setTimeout> | null = null;
 let localWrite: Promise<void> = Promise.resolve();
 
+// How long after the last change each copy is written. The browser copy is
+// cheap and goes first; the cloud waits for the user to pause. Tests shrink
+// these so a scenario takes milliseconds instead of seconds.
+export const SYNC_DELAYS = { local: 800, cloud: 1500 };
+
 function stored(doc: Doc): StoredDoc {
   return {
     token: doc.token,
@@ -109,7 +114,7 @@ async function persist(doc: Doc, active: boolean): Promise<void> {
   useCloudSync.setState({ local: ok ? "ok" : localSaveState() });
 }
 
-function scheduleLocal(delayMs = 800) {
+function scheduleLocal(delayMs = SYNC_DELAYS.local) {
   if (localTimer) clearTimeout(localTimer);
   localTimer = setTimeout(() => void flushLocal(), delayMs);
 }
@@ -145,7 +150,7 @@ function enqueue(token: string) {
 
 function scheduleCloud(token: string) {
   if (cloudTimer) clearTimeout(cloudTimer);
-  cloudTimer = setTimeout(() => enqueue(token), 1500);
+  cloudTimer = setTimeout(() => enqueue(token), SYNC_DELAYS.cloud);
 }
 
 async function drain(): Promise<void> {
@@ -402,18 +407,8 @@ async function restore(): Promise<void> {
   }
 
   // Designs with unsent edits, from earlier sessions of this account.
-  for (const pending of await listPending()) {
-    if (pending.account !== account || docs.has(pending.token)) continue;
-    docs.set(pending.token, {
-      token: pending.token,
-      account,
-      project: pending.project,
-      cloudId: pending.cloudId,
-      revision: pending.revision,
-      acknowledged: null,
-    });
-    enqueue(pending.token);
-  }
+  await restorePendingFor(account);
+  restoreDone?.();
 }
 
 /**
@@ -441,6 +436,11 @@ async function reconcile(cloudId: string, revision: number | null, token: string
 // are per call, since React mounts effects twice in development and the
 // second call must work after the first was cleaned up.
 let restoreStarted = false;
+let restoreDone: (() => void) | null = null;
+/** Resolves once the design for this page's account has been restored. */
+export const restored: Promise<void> = new Promise((r) => {
+  restoreDone = r;
+});
 
 /** Call at app startup; returns the matching stop. */
 export function startCloudSync(): () => void {

@@ -12,17 +12,38 @@ jobs:
   # :latest and was found by whoever redeployed next.
   test:
     runs-on: ubuntu-latest
+    services:
+      # The suite runs twice: on SQLite, as it does on a laptop, and on the
+      # PostgreSQL production uses — the only place row locks, real
+      # concurrency and the migrations' SQL mean what they claim.
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: app
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U app"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - name: Backend tests
+      - name: Backend tests (SQLite)
         working-directory: ./backend
         run: |
           pip install -r requirements.txt -r requirements-dev.txt
           pytest -q
+      - name: Backend tests (PostgreSQL)
+        working-directory: ./backend
+        env:
+          TEST_DATABASE_URL: postgresql+asyncpg://app:app@localhost:5432/app
+        run: pytest -q
 
       - uses: actions/setup-node@v4
         with:

@@ -4,8 +4,10 @@ os.environ.update(
     # Makes Settings ignore the developer's .env so the suite is hermetic.
     SCULPO_TEST="1",
     ENVIRONMENT="test",
-    DEBUG="true",
-    DATABASE_URL="sqlite+aiosqlite:///:memory:",
+    # In-memory SQLite by default: fast, no services. CI also runs the whole
+    # suite against PostgreSQL (TEST_DATABASE_URL), which is what production
+    # runs and the only place row locks and real concurrency mean anything.
+    DATABASE_URL=os.environ.get("TEST_DATABASE_URL", "sqlite+aiosqlite:///:memory:"),
     ADMIN_USERS="john",
     ADMIN_SIGNUP_SECRET="",
 )
@@ -25,6 +27,8 @@ from app.main import app
 # could pass on a delete that Postgres would refuse or cascade differently.
 @event.listens_for(engine.sync_engine, "connect")
 def _enable_sqlite_foreign_keys(dbapi_connection, _record):
+    if engine.dialect.name != "sqlite":
+        return
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA foreign_keys=ON")
     cursor.close()
@@ -42,6 +46,10 @@ async def _schema():
     yield
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
+    # Each test runs on its own event loop; a pooled connection made on the
+    # previous one cannot be used on this one (asyncpg refuses). Start each
+    # test with an empty pool.
+    await engine.dispose()
 
 
 @pytest_asyncio.fixture
