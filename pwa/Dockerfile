@@ -1,5 +1,5 @@
 # Build from the repo root: docker build -f pwa/Dockerfile .
-FROM node:22-alpine AS build
+FROM node:26-alpine AS build
 WORKDIR /build
 COPY pwa/package.json pwa/package-lock.json ./
 RUN npm ci
