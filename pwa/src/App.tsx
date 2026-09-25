@@ -23,7 +23,7 @@ export default function App() {
   if (status === "checking") {
     return <div className="h-screen bg-neutral-100" />;
   }
-  if (status === "signed-out") {
+  if (status === "signed-out" || status === "unreachable") {
     return <SignInGate />;
   }
 

@@ -37,7 +37,7 @@ export function useShortcuts() {
       // Nothing reaches the scene from the sign-in screen, or from behind a
       // dialog: a Backspace meant for the library must not delete a shape.
       const auth = useAuth.getState().status;
-      if (auth !== "signed-in" && auth !== "offline") return;
+      if (auth !== "signed-in" && auth !== "offline" && auth !== "disconnected") return;
       const s = useScene.getState();
       if (s.sketchMode) {
         if (e.key === "Escape") s.setSketchMode(null);

@@ -101,6 +101,20 @@ export function CloudPanel() {
     );
   }
 
+  if (status === "disconnected") {
+    return (
+      <button
+        onClick={() => void useAuth.getState().init()}
+        title="The server is not answering. You are working from this device's copy; changes sync once it is back. Tap to try now."
+        aria-label="Server unreachable"
+        className="relative rounded-md p-1.5 text-amber-600 hover:bg-neutral-200"
+      >
+        <CloudOff size={17} strokeWidth={1.8} />
+        <span className="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-amber-400" />
+      </button>
+    );
+  }
+
   if (status !== "signed-in" || !me) return null;
 
   const run = async (fn: () => Promise<void>) => {

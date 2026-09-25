@@ -12,6 +12,26 @@ const TOKEN_KEY = "session-token";
 // gate with it. This says: no API at all, whatever is reachable.
 const MODE_KEY = "server-mode";
 
+// The username last signed in on this browser. Not a credential — it only
+// says whose local copy to show while the server cannot be reached, and a
+// session token has to be present for that to happen at all.
+const LAST_USER_KEY = "last-username";
+
+export function lastUsername(): string | null {
+  return localStorage.getItem(LAST_USER_KEY);
+}
+
+export function setLastUsername(name: string | null) {
+  if (name) localStorage.setItem(LAST_USER_KEY, name);
+  else localStorage.removeItem(LAST_USER_KEY);
+}
+
+/** True when this build ships with no server of its own: the packaged app.
+ *  A page served over http(s) came from a Sculpo server and expects one. */
+export function standaloneBuild(): boolean {
+  return typeof location !== "undefined" && !/^https?:$/.test(location.protocol);
+}
+
 export function offlineMode(): boolean {
   return localStorage.getItem(MODE_KEY) === "offline";
 }

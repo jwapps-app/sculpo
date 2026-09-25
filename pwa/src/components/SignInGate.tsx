@@ -7,6 +7,9 @@ import { ServerSettings } from "./ServerSettings";
 // is present and nobody is signed in.
 export function SignInGate() {
   const authenticate = useAuth((s) => s.authenticate);
+  const status = useAuth((s) => s.status);
+  const init = useAuth((s) => s.init);
+  const unreachable = status === "unreachable";
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
@@ -110,6 +113,19 @@ export function SignInGate() {
           >
             Setting up the admin account?
           </button>
+        )}
+        {unreachable && (
+          <div className="rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800">
+            The server is not answering, so signing in is not possible right now.
+            It is retried automatically.
+            <button
+              type="button"
+              onClick={() => void init()}
+              className="ml-2 rounded border border-amber-400 px-1.5 py-0.5 hover:bg-amber-100"
+            >
+              Try now
+            </button>
+          </div>
         )}
         {hint && <p className="text-xs text-neutral-500">{hint}</p>}
         {notice && <p className="text-xs text-red-600">{notice}</p>}

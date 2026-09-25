@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { api, ApiError, getServerUrl } from "../lib/api";
+import { api, ApiError, getServerUrl, lastUsername } from "../lib/api";
 import { sceneApi } from "../lib/sceneApi";
 import {
   deleteDoc,
@@ -68,7 +68,11 @@ export function accountKey(username: string | null): string {
 }
 
 function currentAccount(): string {
-  return accountKey(useAuth.getState().user?.username ?? null);
+  const auth = useAuth.getState();
+  // Disconnected: the session belongs to the user last signed in here, and
+  // it is their copy that is shown and kept.
+  const name = auth.user?.username ?? (auth.status === "disconnected" ? lastUsername() : null);
+  return accountKey(name);
 }
 
 function isDirty(doc: Doc): boolean {
@@ -333,8 +337,7 @@ function afterSignOut() {
  * looking for anything else that still needs saving.
  */
 async function restore(): Promise<void> {
-  const username = useAuth.getState().user?.username ?? null;
-  const account = accountKey(username);
+  const account = currentAccount();
   const anonymous = accountKey(null);
 
   // Designs saved by versions that used localStorage belong to nobody in

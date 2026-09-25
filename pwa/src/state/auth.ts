@@ -2,17 +2,33 @@ import { create } from "zustand";
 import {
   api,
   getServerUrl,
-  offlineMode,
   getToken,
+  offlineMode,
+  setLastUsername,
   setServerUrl,
   setToken,
   setUnauthorizedHandler,
+  standaloneBuild,
   type UserInfo,
 } from "../lib/api";
 
 // Shared auth state. When a backend is reachable the workspace is gated
-// behind sign-in; with no backend ("offline") the standalone tool is open.
-type Status = "checking" | "offline" | "signed-out" | "signed-in";
+// behind sign-in. "offline" is the standalone tool, open: the packaged app
+// with no server, or a deliberate "work offline". A page that came from a
+// server and cannot reach it is not offline — it is "unreachable" (no
+// session: the sign-in screen, and nothing of anyone's shown) or
+// "disconnected" (a session exists: the editor, with that account's own
+// local copy, syncing again when the server is back). Both retry.
+export type Status =
+  | "checking"
+  | "offline"
+  | "unreachable"
+  | "disconnected"
+  | "signed-out"
+  | "signed-in";
+
+const RETRY_MS = 20_000;
+let retry: ReturnType<typeof setTimeout> | null = null;
 
 interface AuthState {
   status: Status;
@@ -48,6 +64,10 @@ export const useAuth = create<AuthState>()((set) => ({
       set({ status: "offline" });
       return;
     }
+    if (retry) {
+      clearTimeout(retry);
+      retry = null;
+    }
     if (!(await api.available())) {
       // A saved server URL that no longer answers must not strand a browser
       // that is itself being served by a Sculpo server. The usual way in:
@@ -57,14 +77,21 @@ export const useAuth = create<AuthState>()((set) => ({
       if (getServerUrl() && (await api.available("/api/v1"))) {
         console.info(`Server ${getServerUrl()} unreachable from here; using this origin's own API.`);
         setServerUrl(null);
-      } else {
+      } else if (standaloneBuild() && !getServerUrl()) {
         set({ status: "offline" });
+        return;
+      } else {
+        // A server is expected and is not answering. Try again later.
+        set({ status: getToken() ? "disconnected" : "unreachable", user: null });
+        retry = setTimeout(() => void useAuth.getState().init(), RETRY_MS);
         return;
       }
     }
     if (getToken()) {
       try {
-        set({ status: "signed-in", user: await api.me() });
+        const user = await api.me();
+        setLastUsername(user.username);
+        set({ status: "signed-in", user });
         return;
       } catch {
         /* expired */
@@ -79,6 +106,7 @@ export const useAuth = create<AuthState>()((set) => ({
         ? await api.login(username, password)
         : await api.register(username, password, secrets ?? {});
     setToken(session.session_token);
+    setLastUsername(session.user.username);
     set({ status: "signed-in", user: session.user });
   },
 
@@ -90,6 +118,7 @@ export const useAuth = create<AuthState>()((set) => ({
       /* already dead */
     }
     setToken(null);
+    setLastUsername(null);
     set({ status: "signed-out", user: null });
     afterSignOutHook?.();
   },
