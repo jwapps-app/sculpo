@@ -324,8 +324,7 @@ export function ResizeHandles() {
     drag.current = null;
     gizmoState.handleActive = false;
     gizmoState.lastInteractionEnd = performance.now();
-    window.removeEventListener("pointermove", onMove);
-    window.removeEventListener("pointerup", onUp);
+    unlisten();
     // A click that never became a drag commits nothing; the dimension label
     // it revealed stays up for editing. On touch, surface that label on tap —
     // there was no hover to reveal it.
@@ -336,6 +335,30 @@ export function ResizeHandles() {
     commitObjects(d.objects);
     setLabel(null);
   };
+
+  // The handlers close over this render's state, so the ones registered are
+  // remembered and those exact functions are removed — on release, on a
+  // cancelled touch, and if the handles unmount mid-drag (the selection
+  // deleted, say). Removing a stale pair from an earlier render left the
+  // live ones behind, steering a later pointer at objects long gone.
+  const listeners = useRef<{ move: (e: PointerEvent) => void; end: () => void } | null>(null);
+  const unlisten = () => {
+    const l = listeners.current;
+    if (!l) return;
+    window.removeEventListener("pointermove", l.move);
+    window.removeEventListener("pointerup", l.end);
+    window.removeEventListener("pointercancel", l.end);
+    listeners.current = null;
+  };
+  const listen = () => {
+    unlisten();
+    listeners.current = { move: onMove, end: onUp };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+  };
+  const unlistenRef = useRef(unlisten);
+  unlistenRef.current = unlisten;
 
   const startDrag = (def: HandleDef, e: { clientX: number; clientY: number; shiftKey: boolean }) => {
     const bbox = selectionBounds();
@@ -354,9 +377,9 @@ export function ResizeHandles() {
       started: false,
     };
     gizmoState.handleActive = true;
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
+    listen();
   };
+
 
   // Inline dimension editing: scale the selection along one axis so its
   // overall size matches the typed value, anchored like the handle drag.
@@ -382,11 +405,10 @@ export function ResizeHandles() {
 
   useEffect(() => {
     return () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
+      unlistenRef.current();
+      drag.current = null;
       gizmoState.handleActive = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const labelDef = label ? DEFS.find((d) => d.key === label.key) : null;

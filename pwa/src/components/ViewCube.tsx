@@ -31,6 +31,7 @@ export function ViewCube() {
     gizmoState.lastInteractionEnd = performance.now();
     window.removeEventListener("pointermove", onMove);
     window.removeEventListener("pointerup", onUp);
+    window.removeEventListener("pointercancel", onUp);
     if (!d?.moved) return;
     // Eat the click this drag is about to produce.
     const swallow = (ev: MouseEvent) => {
@@ -53,6 +54,7 @@ export function ViewCube() {
           drag.current = { x: e.clientX, y: e.clientY, moved: false };
           window.addEventListener("pointermove", onMove);
           window.addEventListener("pointerup", onUp);
+          window.addEventListener("pointercancel", onUp);
         }}
       >
         <GizmoViewcube

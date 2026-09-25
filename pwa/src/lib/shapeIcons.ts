@@ -16,24 +16,53 @@ const ICON_VIEW: Partial<Record<PrimitiveKind, THREE.Vector3>> = {
 };
 const DEFAULT_VIEW = new THREE.Vector3(1, -1, 0.75);
 
+// Once WebGL has refused us, every icon falls back: no point asking again
+// and no point letting the palette throw where the viewport's own fallback
+// would have kept the rest of the app usable.
+let unavailable = false;
+
+/** A flat stand-in when the renderer is not available: the shape's colour
+ *  and its initial, as an SVG data URL. */
+export function fallbackIcon(kind: PrimitiveKind, label: string): string {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><rect x="6" y="6" width="36" height="36" rx="8" fill="${PALETTE_COLORS[kind]}"/><text x="24" y="31" font-family="system-ui,sans-serif" font-size="20" font-weight="700" fill="#fff" text-anchor="middle">${label.charAt(0).toUpperCase()}</text></svg>`;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
+
+/** Frees the offscreen renderer and its GPU context; icons are cached as
+ *  images and never re-rendered, so it has nothing left to do. */
+export function releaseIconRenderer() {
+  if (!renderer) return;
+  renderer.dispose();
+  renderer.forceContextLoss();
+  renderer = null;
+}
+
 export function shapeIcon(kind: PrimitiveKind): string {
   const cached = cache.get(kind);
   if (cached) return cached;
+  if (unavailable) return "";
 
   const params =
     kind === "text" ? { value: "A", size: 10, depth: 5 } : { ...DEFAULT_PARAMS[kind] };
   const geometry = buildGeometry({ kind, params } as ShapeNode);
   if (!geometry) return "";
 
-  renderer ??= (() => {
-    const r = new THREE.WebGLRenderer({
-      antialias: true,
-      alpha: true,
-      preserveDrawingBuffer: true,
-    });
-    r.setSize(SIZE, SIZE);
-    return r;
-  })();
+  try {
+    renderer ??= (() => {
+      const r = new THREE.WebGLRenderer({
+        antialias: true,
+        alpha: true,
+        preserveDrawingBuffer: true,
+      });
+      r.setSize(SIZE, SIZE);
+      return r;
+    })();
+  } catch (err) {
+    console.warn("No WebGL for palette icons; using flat stand-ins", err);
+    unavailable = true;
+    geometry.dispose();
+    return "";
+  }
 
   const scene = new THREE.Scene();
   scene.add(new THREE.AmbientLight(0xffffff, 0.8));

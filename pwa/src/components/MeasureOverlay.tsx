@@ -26,6 +26,13 @@ export function MeasureOverlay() {
     l.visible = false;
     return l;
   }, []);
+  useEffect(
+    () => () => {
+      lineObj.geometry.dispose();
+      (lineObj.material as THREE.Material).dispose();
+    },
+    [lineObj],
+  );
   const [readout, setReadout] = useState<{
     mid: [number, number, number];
     d: number;

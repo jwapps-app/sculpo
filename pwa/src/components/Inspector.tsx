@@ -351,6 +351,46 @@ function ShapeRounding({ node }: { node: ShapeNode }) {
   );
 }
 
+/** A parameter field that commits once, on Enter or blur — typing "25" is
+ *  one edit and one undo step, not a "2" and then a "25", each rebuilding
+ *  the shape and each a step in the history. */
+function ParamField({
+  label,
+  value,
+  step,
+  onCommit,
+}: {
+  label: string;
+  value: number;
+  step: number;
+  onCommit: (v: number) => void;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const commit = () => {
+    if (draft === null) return;
+    const v = Number(draft);
+    setDraft(null);
+    if (Number.isFinite(v) && v !== value) onCommit(v);
+  };
+  return (
+    <label className="flex items-center justify-between gap-2 text-sm">
+      <span className="text-neutral-500">{label}</span>
+      <input
+        type="number"
+        step={step}
+        value={draft ?? value}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+          if (e.key === "Escape") setDraft(null);
+        }}
+        className="w-20 rounded border border-neutral-300 px-1.5 py-0.5 text-right text-sm"
+      />
+    </label>
+  );
+}
+
 function ShapeParams({ node }: { node: ShapeNode }) {
   const updateShape = useScene((s) => s.updateShape);
   const units = useScene((s) => s.units);
@@ -422,24 +462,20 @@ function ShapeParams({ node }: { node: ShapeNode }) {
         const isCount = COUNT_PARAMS.has(key);
         const u: Units = isCount ? "mm" : units; // counts pass through untouched
         return (
-          <label key={key} className="flex items-center justify-between gap-2 text-sm">
-            <span className="text-neutral-500">{key}</span>
-            <input
-              type="number"
-              value={isCount ? raw : Number(mmToDisplay(raw, u).toFixed(3))}
-              step={isCount || u === "mm" ? 1 : 0.125}
-              onChange={(e) => {
-                const v = Number(e.target.value);
-                // Rounding params are legitimately zero (= sharp edges).
-                const minAllowed = ZEROABLE_PARAMS.has(key) ? 0 : Number.MIN_VALUE;
-                if (!Number.isFinite(v) || v < minAllowed) return;
-                updateShape(node.id, {
-                  params: { ...node.params, [key]: isCount ? v : mmFromDisplay(v, u) },
-                });
-              }}
-              className="w-20 rounded border border-neutral-300 px-1.5 py-0.5 text-right text-sm"
-            />
-          </label>
+          <ParamField
+            key={key}
+            label={key}
+            value={isCount ? raw : Number(mmToDisplay(raw, u).toFixed(3))}
+            step={isCount || u === "mm" ? 1 : 0.125}
+            onCommit={(v) => {
+              // Rounding params are legitimately zero (= sharp edges).
+              const minAllowed = ZEROABLE_PARAMS.has(key) ? 0 : Number.MIN_VALUE;
+              if (!Number.isFinite(v) || v < minAllowed) return;
+              updateShape(node.id, {
+                params: { ...node.params, [key]: isCount ? v : mmFromDisplay(v, u) },
+              });
+            }}
+          />
         );
       })}
     </div>

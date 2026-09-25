@@ -42,6 +42,11 @@ export function CloudPanel() {
   // The one and only time this code is visible — the server keeps a hash.
   const [newInvite, setNewInvite] = useState<InviteCreated | null>(null);
   const [libraryOpen, setLibraryOpen] = useState(false);
+  const setModalOpen = useScene((s) => s.setModalOpen);
+  useEffect(() => {
+    setModalOpen(libraryOpen);
+    return () => setModalOpen(false);
+  }, [libraryOpen, setModalOpen]);
   const [showPwForm, setShowPwForm] = useState(false);
   const [pwCurrent, setPwCurrent] = useState("");
   const [pwNew, setPwNew] = useState("");

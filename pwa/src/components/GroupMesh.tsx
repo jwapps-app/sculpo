@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import * as THREE from "three";
 import type { GroupNode } from "../types/scene";
 import { nodeRole } from "../types/scene";
@@ -22,6 +22,7 @@ export function GroupMesh({ node, dimmed = false }: { node: GroupNode; dimmed?: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [signature, engineReady],
   );
+  useEffect(() => () => geometry?.dispose(), [geometry]);
   const inherited = useMemo(
     () => firstSolidColor(node, nodes),
     // eslint-disable-next-line react-hooks/exhaustive-deps

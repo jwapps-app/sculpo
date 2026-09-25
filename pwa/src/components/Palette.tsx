@@ -1,6 +1,7 @@
+import { useEffect } from "react";
 import { Pencil, PenTool, RotateCcw } from "lucide-react";
 import type { PrimitiveKind } from "../types/scene";
-import { shapeIcon } from "../lib/shapeIcons";
+import { fallbackIcon, releaseIconRenderer, shapeIcon } from "../lib/shapeIcons";
 import { useScene } from "../state/store";
 import { SHAPE_DRAG_TYPE } from "./Viewport";
 
@@ -30,6 +31,9 @@ const KINDS: { kind: PrimitiveKind; label: string }[] = [
 ];
 
 export function Palette() {
+  // Icons are rendered during the first render; the GPU context behind
+  // them is released as soon as that is done.
+  useEffect(() => releaseIconRenderer(), []);
   const setPlacing = useScene((s) => s.setPlacing);
   const placing = useScene((s) => s.placing);
   const setSketchMode = useScene((s) => s.setSketchMode);
@@ -58,7 +62,7 @@ export function Palette() {
             }`}
           >
             <img
-              src={shapeIcon(kind)}
+              src={shapeIcon(kind) || fallbackIcon(kind, label)}
               alt={label}
               draggable={false}
               className="h-9 w-9"

@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import * as THREE from "three";
 import { useScene, undo, redo } from "../state/store";
+import { useAuth } from "../state/auth";
 import { isGroup, type Vec3 } from "../types/scene";
 import { sceneApi } from "../lib/sceneApi";
 import { workplaneNormal } from "../lib/workplane";
@@ -25,10 +26,24 @@ export function useShortcuts() {
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
-      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) {
+      if (
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.tagName === "SELECT" ||
+        target.isContentEditable
+      ) {
         return;
       }
+      // Nothing reaches the scene from the sign-in screen, or from behind a
+      // dialog: a Backspace meant for the library must not delete a shape.
+      const auth = useAuth.getState().status;
+      if (auth !== "signed-in" && auth !== "offline") return;
       const s = useScene.getState();
+      if (s.sketchMode) {
+        if (e.key === "Escape") s.setSketchMode(null);
+        return;
+      }
+      if (s.modalOpen) return;
       const mod = e.metaKey || e.ctrlKey;
 
       if (mod && e.key.toLowerCase() === "z") {

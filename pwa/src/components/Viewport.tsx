@@ -533,6 +533,10 @@ export function Viewport() {
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
+      // A touch the browser takes over (a scroll, a system gesture) ends
+      // the same way a lifted finger does, so no marquee or cruise drag is
+      // left waiting for a release that never comes.
+      onPointerCancel={onPointerUp}
       onDoubleClick={(e) => {
         if (
           editingGroupId &&

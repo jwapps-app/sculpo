@@ -53,6 +53,16 @@ export function RulerOverlay() {
     g.add(mk(new THREE.Vector3(0, 0, 30), AXIS_COLORS[2]));
     return g;
   }, [rulerOrigin]);
+  useEffect(
+    () => () => {
+      marker?.traverse((o) => {
+        const line = o as THREE.Line;
+        line.geometry?.dispose();
+        (line.material as THREE.Material | undefined)?.dispose();
+      });
+    },
+    [marker],
+  );
 
   useFrame(() => {
     if (!rulerOrigin || ids.length === 0) {

@@ -84,6 +84,10 @@ export function ShapeMesh({ node, dimmed = false }: { node: ShapeNode; dimmed?: 
     [node.kind, JSON.stringify(node.params), engineReady],
   );
 
+  // A replaced geometry's GPU buffers are freed. Nothing else would: the
+  // renderer frees on dispose, and nobody else holds this object.
+  useEffect(() => () => geometry?.dispose(), [geometry]);
+
   // Resize handles and the gizmo move the mesh directly while dragging, then
   // commit to the store. A box's commit folds its scale into w/d/h, so its
   // scale prop reads [1, 1, 1] before and after — unchanged as far as the

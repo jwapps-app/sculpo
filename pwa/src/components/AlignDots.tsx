@@ -151,6 +151,15 @@ export function AlignDots() {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hover, active, ids, nodes, anchors]);
+  useEffect(
+    () => () => {
+      for (const h of previews ?? []) {
+        h.geometry.dispose();
+        (h.material as THREE.Material).dispose();
+      }
+    },
+    [previews],
+  );
 
   if (!active) return null;
 

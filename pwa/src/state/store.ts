@@ -205,6 +205,10 @@ interface SceneState {
   // Shapes the others align to while align mode is on. Empty means the whole
   // selection is the reference.
   alignAnchors: string[];
+  // A dialog or full-window panel (the library) is up: editing shortcuts
+  // must not reach the scene behind it.
+  modalOpen: boolean;
+  setModalOpen: (open: boolean) => void;
   // The rounding tool: every roundable line in the scene becomes clickable.
   filletMode: boolean;
   // Radius the rounding tool gives the next edge clicked, in mm.
@@ -329,6 +333,8 @@ export const useScene = create<SceneState>()(
       placing: null,
       alignMode: false,
       alignAnchors: [],
+      modalOpen: false,
+      setModalOpen: (open) => set({ modalOpen: open }),
       filletMode: false,
       filletRadius: (() => {
         const v = Number(localStorage.getItem("fillet-radius"));
@@ -1145,6 +1151,10 @@ export const useScene = create<SceneState>()(
       // modes are ephemeral.
       partialize: (s) => ({ project: s.project }),
       equality: (past, current) => past.project === current.project,
+      // Snapshots share structure, but every step still keeps whatever it
+      // replaced reachable — an imported mesh deleted an hour ago included.
+      // A hundred steps is more than anyone walks back through.
+      limit: 100,
     },
   ),
 );
