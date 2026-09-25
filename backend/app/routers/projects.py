@@ -35,7 +35,7 @@ async def _check_size(payload: ProjectIn, request: Request) -> None:
     size = len(await asyncio.to_thread(json.dumps, payload.data, separators=(",", ":")))
     if size > settings.max_project_bytes:
         raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
             detail=f"Project too large ({size} bytes; limit {settings.max_project_bytes}).",
         )
 
@@ -225,7 +225,7 @@ async def put_thumbnail(
         ) from None
     if len(raw) > settings.max_thumbnail_bytes:
         raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
             detail=(
                 f"Thumbnail too large ({len(raw)} bytes; "
                 f"limit {settings.max_thumbnail_bytes})."

@@ -9,7 +9,6 @@ from app.config import settings
 from app.main import unclaimed_admin_names
 from tests.conftest import sign_in
 
-pytestmark = pytest.mark.asyncio
 
 
 async def test_unclaimed_admin_name_is_reported_until_registered(client):

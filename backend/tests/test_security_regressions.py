@@ -6,7 +6,6 @@ import pytest
 from app.core.security import hash_password, verify_password
 from tests.conftest import sign_in
 
-pytestmark = pytest.mark.asyncio
 
 CREDS = {"username": "john", "password": "correct-horse-9"}
 

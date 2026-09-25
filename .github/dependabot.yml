@@ -1,0 +1,26 @@
+# Keeps the advisory list from silently regrowing: one grouped pull request
+# per ecosystem per week, tested by the same workflow as everything else.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /pwa
+    schedule:
+      interval: weekly
+    groups:
+      frontend:
+        patterns: ["*"]
+  - package-ecosystem: pip
+    directory: /backend
+    schedule:
+      interval: weekly
+    groups:
+      backend:
+        patterns: ["*"]
+  - package-ecosystem: docker
+    directories: ["/backend", "/pwa"]
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

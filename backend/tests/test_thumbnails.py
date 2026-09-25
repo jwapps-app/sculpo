@@ -7,7 +7,6 @@ import pytest
 
 from tests.conftest import sign_in
 
-pytestmark = pytest.mark.asyncio
 
 # A 1x1 PNG — enough to prove the round trip without pulling in an image lib.
 PNG = base64.b64encode(

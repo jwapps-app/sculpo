@@ -1,8 +1,6 @@
-import pytest
 
 from tests.conftest import sign_in
 
-pytestmark = pytest.mark.asyncio
 
 
 async def admin_headers(client):

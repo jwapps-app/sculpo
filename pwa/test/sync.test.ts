@@ -332,3 +332,30 @@ describe("a server that does not answer", () => {
     expect(page.auth.useAuth.getState().status).toBe("offline");
   });
 });
+
+describe("two tabs on one design", () => {
+  it("brings a clean tab up to date when another tab saves", async () => {
+    await signIn("ann");
+    const tabA = await boot();
+    tabA.store.useScene.getState().addShapeWithParams("box", { w: 10, d: 10, h: 10, radius: 0 });
+    tabA.store.useScene.getState().setProjectName("both");
+    await untilSaved(tabA.sync);
+    const id = tabA.store.useScene.getState().cloudProjectId!;
+
+    // A second tab, same browser, same design open.
+    const tabB = await boot();
+    stop = () => {
+      tabA.stop();
+      tabB.stop();
+    };
+    expect(tabB.store.useScene.getState().cloudProjectId).toBe(id);
+    expect(tabB.store.useScene.getState().project.rootOrder).toHaveLength(1);
+
+    tabA.store.useScene.getState().addShapeWithParams("sphere", { r: 3, segments: 8 });
+    await untilSaved(tabA.sync);
+    await sleep(150);
+    expect(tabB.store.useScene.getState().project.rootOrder).toHaveLength(2);
+    expect(tabB.store.useScene.getState().cloudRevision).toBe(2);
+    expect(server.projects.size).toBe(1); // no copy was made
+  });
+});

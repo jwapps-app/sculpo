@@ -225,6 +225,7 @@ async function save(doc: Doc): Promise<void> {
     if (detail) notice = { text: detail, at: Date.now() };
     const shown = notice && Date.now() - notice.at < NOTICE_MS ? notice.text : null;
     useCloudSync.setState({ status: "saved", detail: shown });
+    if (doc.cloudId && doc.revision !== null) tellOtherTabs(doc.cloudId, doc.revision);
     if (active && doc.cloudId) void refreshThumbnail(doc.cloudId, doc.token);
   } catch (err) {
     useCloudSync.setState({
@@ -247,6 +248,49 @@ function renameDoc(doc: Doc, name: string) {
   } else {
     doc.project = { ...doc.project, name };
   }
+}
+
+// ---- Other tabs ---------------------------------------------------------------
+
+// Two tabs of the same browser can have the same design open. The server's
+// revisions stop them overwriting each other, but a tab that keeps editing
+// a stale copy ends up with a "(copy)" project. So a tab that saves tells
+// the others; a tab that has the design open and clean follows to the new
+// revision, and one with unsent edits says so, so the copy is no surprise.
+interface TabNotice {
+  cloudId: string;
+  revision: number;
+  sender: string;
+}
+const tabId = Math.random().toString(36).slice(2);
+let channel: BroadcastChannel | null = null;
+
+function tabs(): BroadcastChannel | null {
+  if (channel) return channel;
+  if (typeof BroadcastChannel === "undefined") return null;
+  channel = new BroadcastChannel("sculpo-sync");
+  channel.onmessage = (e: MessageEvent<TabNotice>) => {
+    const n = e.data;
+    if (!n || n.sender === tabId) return;
+    const state = useScene.getState();
+    if (state.cloudProjectId !== n.cloudId) return;
+    if ((state.cloudRevision ?? 0) >= n.revision) return;
+    const doc = docs.get(state.docToken);
+    if (doc && isDirty(doc)) {
+      notice = {
+        text: "This design was just saved from another tab. Your unsent edits here will be kept as a copy.",
+        at: Date.now(),
+      };
+      useCloudSync.setState({ detail: notice.text });
+      return;
+    }
+    void reconcile(n.cloudId, state.cloudRevision, state.docToken);
+  };
+  return channel;
+}
+
+function tellOtherTabs(cloudId: string, revision: number) {
+  tabs()?.postMessage({ cloudId, revision, sender: tabId } satisfies TabNotice);
 }
 
 // ---- Thumbnails ---------------------------------------------------------------
@@ -419,7 +463,7 @@ async function restore(): Promise<void> {
 async function reconcile(cloudId: string, revision: number | null, token: string) {
   try {
     const listed = (await api.listProjects()).find((p) => p.id === cloudId);
-    if (!listed || revision === null || listed.revision <= revision) return;
+    if (!listed || listed.revision <= (revision ?? 0)) return;
     if (useScene.getState().docToken !== token) return; // the user moved on
     const doc = docs.get(token);
     if (doc && isDirty(doc)) return; // edited meanwhile; the save will sort it out
@@ -445,6 +489,7 @@ export const restored: Promise<void> = new Promise((r) => {
 /** Call at app startup; returns the matching stop. */
 export function startCloudSync(): () => void {
   setSignOutHooks(prepareSignOut, afterSignOut);
+  tabs(); // listen for other tabs from the start, not only after a save
 
   const unsubScene = useScene.subscribe((state, prev) => {
     if (state.docToken !== prev.docToken) {
@@ -521,6 +566,8 @@ export function startCloudSync(): () => void {
   return () => {
     unsubScene();
     unsubAuth();
+    channel?.close();
+    channel = null;
     window.removeEventListener("pagehide", onHide);
     document.removeEventListener("visibilitychange", onVisibility);
     if (cloudTimer) clearTimeout(cloudTimer);

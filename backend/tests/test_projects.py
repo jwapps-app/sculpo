@@ -1,8 +1,6 @@
-import pytest
 
 from tests.conftest import sign_in
 
-pytestmark = pytest.mark.asyncio
 
 DOC = {"id": "p1", "name": "test", "version": 1, "nodes": {}, "rootOrder": []}
 

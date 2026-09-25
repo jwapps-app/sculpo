@@ -64,7 +64,7 @@ async def validation_error(request: Request, exc: RequestValidationError) -> JSO
     malformed 40MB body comes straight back as a 40MB error response — work
     the size cap never gets to refuse, since validation fails first."""
     return JSONResponse(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         content={
             "detail": [
                 {"loc": e.get("loc", []), "msg": e.get("msg", ""), "type": e.get("type", "")}
@@ -128,7 +128,7 @@ class BodySizeLimit:
         body = b'{"detail":"Request too large."}'
         await send({
             "type": "http.response.start",
-            "status": status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            "status": status.HTTP_413_CONTENT_TOO_LARGE,
             "headers": [
                 (b"content-type", b"application/json"),
                 (b"content-length", str(len(body)).encode()),
