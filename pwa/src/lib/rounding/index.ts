@@ -9,6 +9,7 @@ import { buildConvex, convexEdges } from "./convex";
 
 export * from "./types";
 export * from "./picks";
+export * from "./rims";
 
 /**
  * The shape with the picked edges rounded, or null when that needs the

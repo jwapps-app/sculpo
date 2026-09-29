@@ -1,8 +1,11 @@
 import * as THREE from "three";
-import { cutGroup, manifoldReady } from "../manifold";
+import { cutGroupRims, manifoldReady } from "../manifold";
+import type { RimSpec } from "../rounding/rims";
 
 // The boolean engine, off the UI thread. A request carries the baked child
-// geometries of one group as raw arrays; the reply is the cut result, or a
+// geometries of one group as raw arrays, and for each hole whose rims can
+// be treated, its rim spec; the reply is the cut result and where each such
+// hole leaves the material, or a
 // note that the engine is not available here and the caller should use its
 // in-thread fallback. Arrays are transferred, not copied, in both directions.
 
@@ -14,6 +17,7 @@ interface Request {
   id: number;
   solids: RawGeo[];
   holes: RawGeo[];
+  rims: (RimSpec | null)[];
 }
 
 const ctx = self as unknown as {
@@ -29,21 +33,22 @@ function toGeometry(raw: RawGeo): THREE.BufferGeometry {
 }
 
 ctx.onmessage = async (e) => {
-  const { id, solids, holes } = e.data;
+  const { id, solids, holes, rims } = e.data;
   if (!(await manifoldReady)) {
     ctx.postMessage({ id, fallback: true });
     return;
   }
-  const out = cutGroup(solids.map(toGeometry), holes.map(toGeometry));
-  if (!out) {
+  const cut = cutGroupRims(solids.map(toGeometry), holes.map(toGeometry), rims);
+  if (!cut) {
     ctx.postMessage({ id, fallback: true });
     return;
   }
+  const out = cut.geometry;
   const pos = out.getAttribute("position").array as Float32Array;
   const normal = out.getAttribute("normal")?.array as Float32Array | undefined;
   const idx = out.index ? (out.index.array as Uint32Array) : null;
   const transfer: Transferable[] = [pos.buffer];
   if (normal) transfer.push(normal.buffer);
   if (idx) transfer.push(idx.buffer);
-  ctx.postMessage({ id, pos, normal, idx }, transfer);
+  ctx.postMessage({ id, pos, normal, idx, exits: cut.exits }, transfer);
 };

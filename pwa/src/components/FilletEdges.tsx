@@ -8,7 +8,8 @@ import { MeshBVH } from "three-mesh-bvh";
 import { useScene } from "../state/store";
 import { isGroup, type Project, type ShapeNode } from "../types/scene";
 import { roundingSpec } from "../lib/primitives";
-import { parsePicks, pickEdges, roundFamily, type PickEdge } from "../lib/rounding";
+import { holeRim, parsePicks, pickEdges, rimEdges, roundFamily, type PickEdge } from "../lib/rounding";
+import { peekExits, useEvaluationTick } from "../lib/csgAsync";
 import { composeMatrix } from "../lib/transform";
 import { gizmoState } from "../lib/gizmoState";
 import { useCoarsePointer } from "../lib/pointer";
@@ -21,8 +22,9 @@ import { useManifoldLoaded } from "../lib/manifold";
 // group is rebuilt from its parts, so rounding a part's edge and re-cutting
 // is how a grouped edge gets rounded. Only lines that still lie on the
 // group's surface are offered, so edges a cut has swallowed don't float in
-// the air. Lines created by a cut itself (the rim of a drilled hole) belong
-// to no shape and are not offered.
+// the air. The rim a drilled hole leaves belongs to no shape; the cut
+// reports where each cylinder hole meets the material, and those rims are
+// offered on the hole, to be rounded over or countersunk.
 
 const SQUARE = "#2563eb";
 const ROUNDED = "#f59e0b";
@@ -33,8 +35,9 @@ interface Leaf {
   world: THREE.Matrix4;
   /** The top-level node to select when one of its edges is clicked. */
   owner: string;
-  /** For a part of a group: the group, and the part's frame inside it. */
-  within: { groupId: string; frame: THREE.Matrix4 } | null;
+  /** For a part of a group: the group drawn as one solid, the part's frame
+   *  inside it, and the group the part is cut in (a nested one, maybe). */
+  within: { groupId: string; frame: THREE.Matrix4; parentId: string } | null;
 }
 
 function matrixOf(n: { position: [number, number, number]; rotation: [number, number, number]; scale: [number, number, number] }) {
@@ -49,20 +52,21 @@ function collectLeaves(nodes: Project["nodes"], rootOrder: string[], editingId: 
     frame: THREE.Matrix4,
     owner: string,
     groupId: string,
+    parentId: string,
   ) => {
     const n = nodes[id];
     if (!n || n.hidden || n.locked) return;
     const m = matrixOf(n);
     const w = world.clone().multiply(m);
     const f = frame.clone().multiply(m);
-    if (isGroup(n)) for (const c of n.childIds) walk(c, w, f, owner, groupId);
-    else out.push({ node: n, world: w, owner, within: { groupId, frame: f } });
+    if (isGroup(n)) for (const c of n.childIds) walk(c, w, f, owner, groupId, n.id);
+    else out.push({ node: n, world: w, owner, within: { groupId, frame: f, parentId } });
   };
   // A group rendered as one solid: its parts, checked against its surface.
   const intoGroup = (groupId: string, world: THREE.Matrix4, owner: string) => {
     const g = nodes[groupId];
     if (!g || !isGroup(g)) return;
-    for (const c of g.childIds) walk(c, world, new THREE.Matrix4(), owner, groupId);
+    for (const c of g.childIds) walk(c, world, new THREE.Matrix4(), owner, groupId, groupId);
   };
   const editing = editingId ? nodes[editingId] : undefined;
   if (editing && isGroup(editing)) {
@@ -194,6 +198,9 @@ export function FilletEdges() {
   const raycaster = useThree((s) => s.raycaster);
   const engineReady = useManifoldLoaded();
   const coarse = useCoarsePointer();
+  const style = useScene((s) => s.filletStyle);
+  // Group results arrive from the worker after the commit; redraw on each.
+  const evaluated = useEvaluationTick();
 
   const materials = useMemo(
     () => ({
@@ -227,7 +234,8 @@ export function FilletEdges() {
       const spec = roundingSpec(leaf.node);
       if (!spec) continue;
       const picks = parsePicks(leaf.node.kind, leaf.node.params);
-      let edges = pickEdges(spec);
+      // Countersinking is for hole rims only; the shape's own edges wait.
+      let edges = style === "sink" ? [] : pickEdges(spec);
       if (leaf.within) {
         const mesh = scene.getObjectByName(leaf.within.groupId) as THREE.Mesh | undefined;
         const bvh = mesh?.geometry ? bvhFor(mesh.geometry) : null;
@@ -237,7 +245,12 @@ export function FilletEdges() {
             .map((e) => clipToSurface(e, frame, bvh, 0.05 + 0.45 * (picks.get(e.id) ?? 0)))
             .filter((e): e is PickEdge => e !== null);
         }
+        const parent = nodes[leaf.within.parentId];
+        const rim = holeRim(leaf.node, new THREE.Matrix4());
+        const exits = rim && parent && isGroup(parent) ? peekExits(parent, nodes)?.get(leaf.node.id) : undefined;
+        if (rim && exits) edges.push(...rimEdges(rim, exits));
       }
+      if (!edges.length) continue;
       const segments = new Map<string, number[]>();
       const square = lineSet(leaf, edges.filter((e) => !picks.has(e.id)), materials.square, segments);
       const rounded = lineSet(leaf, edges.filter((e) => picks.has(e.id)), materials.rounded, segments);
@@ -248,7 +261,7 @@ export function FilletEdges() {
     return () => {
       for (const s of next) s.object.geometry.dispose();
     };
-  }, [filletMode, nodes, rootOrder, editingId, engineReady, scene, materials]);
+  }, [filletMode, nodes, rootOrder, editingId, engineReady, evaluated, style, scene, materials]);
 
   const [hover, setHover] = useState<Hover>(null);
   useEffect(() => {

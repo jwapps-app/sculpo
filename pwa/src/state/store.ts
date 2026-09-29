@@ -11,7 +11,7 @@ import { MAX_NAME_CHARS } from "../lib/projectFile";
 import { workplaneNormal, type Workplane } from "../lib/workplane";
 import { sceneApi } from "../lib/sceneApi";
 import { planAlign } from "../lib/align";
-import { formatPicks, parsePicks, pickEdges, roundFamily } from "../lib/rounding";
+import { formatPicks, isRimEdge, parsePicks, parseSinks, pickEdges, roundFamily } from "../lib/rounding";
 import { roundingSpec } from "../lib/primitives";
 import { DEFAULT_STEP, type Units } from "../lib/units";
 
@@ -213,6 +213,11 @@ interface SceneState {
   filletMode: boolean;
   // Radius the rounding tool gives the next edge clicked, in mm.
   filletRadius: number;
+  // What a click does to a hole's rim: round it over, or countersink it to
+  // a cone `sinkDiameter` across (mm) with `sinkAngle` between its sides.
+  filletStyle: "round" | "sink";
+  sinkDiameter: number;
+  sinkAngle: number;
   measureMode: boolean;
   // Ruler datum on the workplane: while set, the selection shows persistent
   // dimensions and its offset from this origin. null = ruler off.
@@ -240,6 +245,9 @@ interface SceneState {
   toggleAlignAnchor: (id: string, additive: boolean) => void;
   setFilletMode: (on: boolean) => void;
   setFilletRadius: (mm: number) => void;
+  setFilletStyle: (style: "round" | "sink") => void;
+  setSinkDiameter: (mm: number) => void;
+  setSinkAngle: (degrees: number) => void;
   // Rounds a shape's edge at the tool's radius if it is square, squares it
   // if it is rounded. Works on shapes inside groups too.
   toggleEdge: (id: string, edge: string) => void;
@@ -339,6 +347,15 @@ export const useScene = create<SceneState>()(
       filletRadius: (() => {
         const v = Number(localStorage.getItem("fillet-radius"));
         return Number.isFinite(v) && v > 0 ? v : 2;
+      })(),
+      filletStyle: localStorage.getItem("fillet-style") === "sink" ? "sink" : "round",
+      sinkDiameter: (() => {
+        const v = Number(localStorage.getItem("sink-diameter"));
+        return Number.isFinite(v) && v > 0 ? v : 8;
+      })(),
+      sinkAngle: (() => {
+        const v = Number(localStorage.getItem("sink-angle"));
+        return Number.isFinite(v) && v >= 10 && v <= 170 ? v : 90;
       })(),
       measureMode: false,
       rulerOrigin: null,
@@ -459,15 +476,40 @@ export const useScene = create<SceneState>()(
         localStorage.setItem("fillet-radius", String(v));
         set({ filletRadius: v });
       },
+      setFilletStyle: (style) => {
+        localStorage.setItem("fillet-style", style);
+        set({ filletStyle: style });
+      },
+      setSinkDiameter: (mm) => {
+        const v = Math.max(0.1, mm);
+        localStorage.setItem("sink-diameter", String(v));
+        set({ sinkDiameter: v });
+      },
+      setSinkAngle: (degrees) => {
+        const v = Math.min(170, Math.max(10, degrees));
+        localStorage.setItem("sink-angle", String(v));
+        set({ sinkAngle: v });
+      },
       toggleEdge: (id, edge) => {
         const node = get().project.nodes[id];
         if (!node || isGroup(node) || node.locked || !roundFamily(node.kind)) return;
         // Measure the edge on the shape's true size before it is rounded.
         const shape = foldBoxScale(node);
         const picks = parsePicks(shape.kind, shape.params);
-        if (picks.has(edge)) picks.delete(edge);
-        else picks.set(edge, get().filletRadius);
-        const params = { ...shape.params, edges: formatPicks(picks) };
+        const sinks = parseSinks(shape.params);
+        const { filletStyle, filletRadius, sinkDiameter, sinkAngle } = get();
+        if (picks.has(edge)) {
+          picks.delete(edge);
+          sinks.delete(edge);
+        } else if (filletStyle === "sink") {
+          // Only a hole's rim can be countersunk.
+          if (!isRimEdge(edge)) return;
+          picks.set(edge, sinkDiameter);
+          sinks.set(edge, sinkAngle);
+        } else {
+          picks.set(edge, filletRadius);
+        }
+        const params = { ...shape.params, edges: formatPicks(picks, sinks) };
         set((s) => ({
           project: {
             ...s.project,
@@ -479,8 +521,10 @@ export const useScene = create<SceneState>()(
         const node = get().project.nodes[id];
         if (!node || isGroup(node) || node.locked || !roundFamily(node.kind)) return;
         const picks = parsePicks(node.kind, node.params);
-        for (const key of picks.keys()) picks.set(key, Math.max(0.05, mm));
-        const params: Record<string, number | string> = { ...node.params, edges: formatPicks(picks) };
+        const sinks = parseSinks(node.params);
+        // A countersink's size is a diameter, not a radius: left alone.
+        for (const key of picks.keys()) if (!sinks.has(key)) picks.set(key, Math.max(0.05, mm));
+        const params: Record<string, number | string> = { ...node.params, edges: formatPicks(picks, sinks) };
         if (node.kind === "box") params.radius = Math.max(0.05, mm);
         set((s) => ({
           project: { ...s.project, nodes: { ...s.project.nodes, [id]: { ...node, params } } },
@@ -494,7 +538,19 @@ export const useScene = create<SceneState>()(
         if (!spec) return;
         const r = get().filletRadius;
         const picks = new Map(on ? pickEdges(spec).map((e) => [e.id, r] as const) : []);
-        const params = { ...shape.params, edges: formatPicks(picks) };
+        // "All" is the shape's own edges; treated hole rims stay as they are.
+        const sinks = new Map<string, number>();
+        if (on) {
+          const had = parsePicks(shape.kind, shape.params);
+          const hadSinks = parseSinks(shape.params);
+          for (const [id, size] of had) {
+            if (!isRimEdge(id)) continue;
+            picks.set(id, size);
+            const angle = hadSinks.get(id);
+            if (angle !== undefined) sinks.set(id, angle);
+          }
+        }
+        const params = { ...shape.params, edges: formatPicks(picks, sinks) };
         set((s) => ({
           project: {
             ...s.project,

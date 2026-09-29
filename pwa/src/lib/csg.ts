@@ -4,6 +4,7 @@ import type { GroupNode, Project, SceneNode, ShapeNode } from "../types/scene";
 import { isGroup, nodeRole } from "../types/scene";
 import { buildGeometry } from "./primitives";
 import { bakeTransform, composeMatrix } from "./transform";
+import { holeRim, type RimSpec } from "./rounding/rims";
 import {
   cutGroup,
   isClosedSolid,
@@ -90,6 +91,7 @@ export function evaluateGroup(
 ): THREE.BufferGeometry | null {
   const solids: THREE.BufferGeometry[] = [];
   const holes: THREE.BufferGeometry[] = [];
+  const rims: (RimSpec | null)[] = [];
 
   for (const childId of group.childIds) {
     const child = nodes[childId];
@@ -106,17 +108,27 @@ export function evaluateGroup(
       role = prepared.role;
     }
     if (!geo) continue;
-    (role === "solid" ? solids : holes).push(bakeChild(child, geo));
+    if (role === "solid") solids.push(bakeChild(child, geo));
+    else {
+      holes.push(bakeChild(child, geo));
+      rims.push(holeRimOf(child));
+    }
   }
 
   // Nothing solid: a hole group. Its shape is the union of its holes.
   const [add, cut] = solids.length ? [solids, holes] : [holes, []];
   if (!add.length) return null;
   if (manifoldLoaded()) {
-    const clean = cutGroup(add, cut);
+    const clean = cutGroup(add, cut, cut.length ? rims : []);
     if (clean) return clean;
   }
   return cutGroupBvh(add, cut);
+}
+
+/** The rim spec for a hole child, with its placement in the group, or null. */
+export function holeRimOf(child: SceneNode): RimSpec | null {
+  if (isGroup(child)) return null;
+  return holeRim(child, composeMatrix(child.position, child.rotation, child.scale));
 }
 
 /** A shape child's geometry, repaired where a flat outline needs it, and

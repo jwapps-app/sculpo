@@ -1,8 +1,10 @@
 import * as THREE from "three";
 import type { GroupNode, Project } from "../types/scene";
 import { isGroup, nodeRole } from "../types/scene";
-import { bakeChild, cutGroupBvh, prepareChild, subtreeSignature } from "./csg";
+import { useSyncExternalStore } from "react";
+import { bakeChild, cutGroupBvh, holeRimOf, prepareChild, subtreeSignature } from "./csg";
 import { manifoldLoaded } from "./manifold";
+import type { RimExits, RimSpec } from "./rounding/rims";
 
 // Group evaluation off the UI thread. The children are prepared here (cheap:
 // primitives, and the transforms baked in) and the boolean — the part that
@@ -18,17 +20,42 @@ interface RawGeo {
 
 const CACHE_MAX = 32;
 const cache = new Map<string, THREE.BufferGeometry | null>();
+// Per evaluated group, where each hole child leaves the material, by child id.
+const exitsCache = new Map<string, Map<string, RimExits>>();
 const inFlight = new Map<string, Promise<THREE.BufferGeometry | null>>();
 
-function remember(signature: string, geo: THREE.BufferGeometry | null) {
+// Bumped whenever an evaluation lands, so anything drawn against evaluated
+// geometry (the rounding tool's lines) can re-read it.
+let tick = 0;
+const tickListeners = new Set<() => void>();
+function subscribeTick(l: () => void) {
+  tickListeners.add(l);
+  return () => {
+    tickListeners.delete(l);
+  };
+}
+export function useEvaluationTick(): number {
+  return useSyncExternalStore(subscribeTick, () => tick);
+}
+
+function remember(signature: string, geo: THREE.BufferGeometry | null, exits: Map<string, RimExits>) {
   if (cache.size >= CACHE_MAX) {
     const oldest = cache.keys().next().value;
     if (oldest !== undefined) {
       cache.get(oldest)?.dispose();
       cache.delete(oldest);
+      exitsCache.delete(oldest);
     }
   }
   cache.set(signature, geo);
+  exitsCache.set(signature, exits);
+  tick++;
+  for (const l of tickListeners) l();
+}
+
+/** Where a group's hole children leave its material, once it has been evaluated. */
+export function peekExits(group: GroupNode, nodes: Project["nodes"]): Map<string, RimExits> | undefined {
+  return exitsCache.get(subtreeSignature(group, nodes));
 }
 
 /** The evaluated geometry if this group has been evaluated already, else null.
@@ -51,6 +78,12 @@ interface Reply {
   pos?: Float32Array;
   normal?: Float32Array;
   idx?: Uint32Array | null;
+  exits?: (RimExits | null)[];
+}
+
+interface Cut {
+  geometry: THREE.BufferGeometry;
+  exits: (RimExits | null)[];
 }
 
 function getWorker(): Worker | null {
@@ -86,7 +119,11 @@ function raw(geo: THREE.BufferGeometry): RawGeo {
   return { pos, idx };
 }
 
-function cutInWorker(solids: THREE.BufferGeometry[], holes: THREE.BufferGeometry[]): Promise<THREE.BufferGeometry | null> {
+function cutInWorker(
+  solids: THREE.BufferGeometry[],
+  holes: THREE.BufferGeometry[],
+  rims: (RimSpec | null)[],
+): Promise<Cut | null> {
   const w = getWorker();
   if (!w) return Promise.resolve(null);
   return new Promise((resolve) => {
@@ -107,9 +144,9 @@ function cutInWorker(solids: THREE.BufferGeometry[], holes: THREE.BufferGeometry
       geo.setAttribute("position", new THREE.BufferAttribute(reply.pos, 3));
       if (reply.normal) geo.setAttribute("normal", new THREE.BufferAttribute(reply.normal, 3));
       if (reply.idx) geo.setIndex(new THREE.BufferAttribute(reply.idx, 1));
-      resolve(geo);
+      resolve({ geometry: geo, exits: reply.exits ?? holes.map(() => null) });
     });
-    w.postMessage({ id, solids: s, holes: h }, transfer);
+    w.postMessage({ id, solids: s, holes: h, rims }, transfer);
   });
 }
 
@@ -130,6 +167,8 @@ export function evaluateGroupAsync(group: GroupNode, nodes: Project["nodes"]): P
   const job = (async () => {
     const solids: THREE.BufferGeometry[] = [];
     const holes: THREE.BufferGeometry[] = [];
+    const rims: (RimSpec | null)[] = [];
+    const holeIds: string[] = [];
     for (const childId of group.childIds) {
       const child = nodes[childId];
       if (!child) continue;
@@ -144,12 +183,22 @@ export function evaluateGroupAsync(group: GroupNode, nodes: Project["nodes"]): P
         role = prepared.role;
       }
       if (!geo) continue;
-      (role === "solid" ? solids : holes).push(bakeChild(child, geo));
+      if (role === "solid") solids.push(bakeChild(child, geo));
+      else {
+        holes.push(bakeChild(child, geo));
+        rims.push(holeRimOf(child));
+        holeIds.push(child.id);
+      }
     }
     const [add, cut] = solids.length ? [solids, holes] : [holes, []];
     let result: THREE.BufferGeometry | null = null;
+    const exits = new Map<string, RimExits>();
     if (add.length) {
-      result = manifoldLoaded() || getWorker() ? await cutInWorker(add, cut) : null;
+      const done = manifoldLoaded() || getWorker() ? await cutInWorker(add, cut, cut.length ? rims : []) : null;
+      result = done?.geometry ?? null;
+      done?.exits.forEach((e, i) => {
+        if (e) exits.set(holeIds[i], e);
+      });
       if (!result) {
         try {
           result = cutGroupBvh(add, cut);
@@ -159,7 +208,7 @@ export function evaluateGroupAsync(group: GroupNode, nodes: Project["nodes"]): P
         }
       }
     }
-    remember(signature, result);
+    remember(signature, result, exits);
     return result;
   })();
   inFlight.set(signature, job);
@@ -169,11 +218,17 @@ export function evaluateGroupAsync(group: GroupNode, nodes: Project["nodes"]): P
 
 declare global {
   interface Window {
-    __csgAsync?: { stats: () => Record<string, unknown> };
+    __csgAsync?: {
+      stats: () => Record<string, unknown>;
+      peekEvaluated: typeof peekEvaluated;
+      peekExits: typeof peekExits;
+    };
   }
 }
 if (import.meta.env.DEV) {
   window.__csgAsync = {
     stats: () => ({ workerBroken, hasWorker: !!worker, pending: pending.size, inFlight: inFlight.size, cached: cache.size }),
+    peekEvaluated,
+    peekExits,
   };
 }

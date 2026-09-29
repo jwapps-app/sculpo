@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { toCreasedNormals } from "three/addons/utils/BufferGeometryUtils.js";
 import type { CrossSection, Manifold, ManifoldToplevel, Mat4 } from "manifold-3d";
 import { BOX_EDGES, edgeAtCorner, edgeSign, fullyRoundedCorners, type BoxAxis } from "./boxEdges";
+import { flaredCutter, flaredProfile, type RimExits, type RimSpec } from "./rounding/rims";
 // Not the npm package's loader: that one builds functions from strings,
 // which the site's Content Security Policy blocks, and the engine would
 // silently never start on a real deployment. See vendor/manifold/README.md.
@@ -196,50 +197,120 @@ export function weldCoincident(m: Manifold): Manifold | null {
  * geometry. Null if any input is not a closed solid, so the caller can fall
  * back rather than lose the shape. Every WASM object is freed before return.
  */
+export interface CutResult {
+  geometry: THREE.BufferGeometry;
+  /** Per hole, where it leaves the material (see rims.ts), or null. */
+  exits: (RimExits | null)[];
+}
+
 export function cutGroup(
   solids: THREE.BufferGeometry[],
   holes: THREE.BufferGeometry[],
+  rims: (RimSpec | null)[] = [],
 ): THREE.BufferGeometry | null {
+  return cutGroupRims(solids, holes, rims)?.geometry ?? null;
+}
+
+/**
+ * The union of the solids minus the holes. A hole with a rim spec has its
+ * rims located first, and where a rim is to be treated the hole is cut with
+ * a flared copy of itself instead. Null when an input is not a closed solid
+ * or the engine fails, so the caller can fall back.
+ */
+export function cutGroupRims(
+  solids: THREE.BufferGeometry[],
+  holes: THREE.BufferGeometry[],
+  rims: (RimSpec | null)[] = [],
+): CutResult | null {
   if (!lib) return null;
   const owned: Manifold[] = [];
   try {
     // Each input is split into its connected pieces first. A shape that is
     // really two closed shells touching along a face is valid input but not a
     // valid result; as separate operands the union dissolves the seam.
-    const pieces = (geo: THREE.BufferGeometry): Manifold[] | null => {
-      const m = toManifold(geo);
-      if (!m) return null;
-      owned.push(m);
+    const pieces = (m: Manifold): Manifold[] => {
       const parts = m.decompose();
       owned.push(...parts);
       return parts;
     };
     const s: Manifold[] = [];
-    const h: Manifold[] = [];
     for (const geo of solids) {
-      const parts = pieces(geo);
-      if (!parts) return null;
-      s.push(...parts);
-    }
-    for (const geo of holes) {
-      const parts = pieces(geo);
-      if (!parts) return null;
-      h.push(...parts);
+      const m = toManifold(geo);
+      if (!m) return null;
+      owned.push(m);
+      s.push(...pieces(m));
     }
     const joined = lib.Manifold.union(s);
     owned.push(joined);
+    const exits: (RimExits | null)[] = holes.map(() => null);
+    const h: Manifold[] = [];
+    for (let i = 0; i < holes.length; i++) {
+      let m = toManifold(holes[i]);
+      if (!m) return null;
+      owned.push(m);
+      const rim = rims[i];
+      if (rim) {
+        const found = findExits(joined, m, rim, owned);
+        exits[i] = found;
+        const profile = found ? flaredProfile(rim, found) : null;
+        if (profile) {
+          const flared = toManifold(flaredCutter(profile, rim));
+          if (flared) {
+            owned.push(flared);
+            m = flared;
+          }
+        }
+      }
+      h.push(...pieces(m));
+    }
     const result = h.length ? lib.Manifold.difference([joined, ...h]) : joined;
     if (result !== joined) owned.push(result);
     if (result.status() !== "NoError") return null;
     const welded = weldCoincident(result);
     if (welded) owned.push(welded);
-    return fromManifold(welded ?? result);
+    return { geometry: fromManifold(welded ?? result), exits };
   } catch (err) {
     console.warn("Manifold boolean failed; falling back", err);
     return null;
   } finally {
     for (const m of owned) m.delete();
   }
+}
+
+// How much of a hole's length must be clear of material before its end
+// counts as poking out, and the reach of the probe that tells a hole ending
+// flush with a face from one ending inside the material.
+const EXIT_EPS = 1e-3;
+const PROBE = 0.5;
+
+/**
+ * Where a hole leaves the solid it cuts: the material's extent along the
+ * hole, read off the intersection of the two. A hole end the material
+ * reaches right up to is either flush with a face or buried; a thin disc
+ * just beyond the end tells which.
+ */
+function findExits(solid: Manifold, hole: Manifold, rim: RimSpec, owned: Manifold[]): RimExits | null {
+  if (!lib) return null;
+  const inter = solid.intersect(hole);
+  owned.push(inter);
+  if (inter.isEmpty()) return null;
+  const frame = new THREE.Matrix4().fromArray(rim.frame);
+  const inverse = frame.clone().invert();
+  const local = inter.transform(inverse.toArray() as Mat4);
+  owned.push(local);
+  const bb = local.boundingBox();
+  const buried = (z: number): boolean => {
+    const disc = lib!.Manifold.cylinder(PROBE, rim.r * 0.9, rim.r * 0.9, 12)
+      .translate([0, 0, z])
+      .transform(frame.toArray() as Mat4);
+    owned.push(disc);
+    const touch = solid.intersect(disc);
+    owned.push(touch);
+    return !touch.isEmpty();
+  };
+  const top = bb.max[2] < rim.z1 - EXIT_EPS ? bb.max[2] : buried(rim.z1) ? null : rim.z1;
+  const bottom = bb.min[2] > rim.z0 + EXIT_EPS ? bb.min[2] : buried(rim.z0 - PROBE) ? null : rim.z0;
+  return { top, bottom };
 }
 
 // Position tolerance for deciding that a vertex sits on an extrusion's top or

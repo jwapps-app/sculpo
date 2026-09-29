@@ -3,7 +3,8 @@ import * as THREE from "three";
 import { bakeTransform, isDecomposable, worldNormal } from "../src/lib/transform";
 import { decodeMeshGeometry, encodeMeshParams } from "../src/lib/meshData";
 import { filletArc } from "../src/lib/rounding/fillet2d";
-import { formatPicks, parsePicks } from "../src/lib/rounding/picks";
+import { formatPicks, parsePicks, parseSinks } from "../src/lib/rounding/picks";
+import { flaredProfile, rimEdges, RIM_BOTTOM, RIM_TOP, type RimSpec } from "../src/lib/rounding/rims";
 import { planAlign } from "../src/lib/align";
 import { clampParam } from "../src/lib/paramLimits";
 
@@ -88,6 +89,70 @@ describe("rounding", () => {
     expect(picks.get("9")).toBe(3);
     expect(parsePicks("box", { edges: "" }).size).toBe(0);
     expect(formatPicks(new Map([["10", 1.5], ["2", 1]]))).toBe("2@1,10@1.5");
+  });
+
+  it("keeps a countersunk rim's angle beside its size", () => {
+    const params = { edges: "c1@1,xt@8v90" };
+    expect(parsePicks("cylinder", params).get("xt")).toBe(8);
+    expect(parseSinks(params)).toEqual(new Map([["xt", 90]]));
+    expect(formatPicks(parsePicks("cylinder", params), parseSinks(params))).toBe("c1@1,xt@8v90");
+  });
+});
+
+describe("hole rims", () => {
+  const identity = Array.from({ length: 16 }, (_, i) => (i % 5 === 0 ? 1 : 0));
+  const hole = (t: Partial<RimSpec>): RimSpec => ({ frame: identity, r: 2, z0: -10, z1: 10, segments: 12, ...t });
+
+  it("does nothing to a hole with no treated rim, or none found", () => {
+    expect(flaredProfile(hole({}), { top: 5, bottom: -5 })).toBeNull();
+    expect(flaredProfile(hole({ top: { size: 8, angle: 90 } }), { top: null, bottom: -5 })).toBeNull();
+  });
+
+  it("cuts a 90° countersink as deep as it is wide", () => {
+    const p = flaredProfile(hole({ top: { size: 8, angle: 90 } }), { top: 5, bottom: -5 })!;
+    // Wall up to the flare, the cone out to the surface, the wider bore on
+    // to the hole's own top, then the axis.
+    const expected = [[0, -10], [2, -10], [2, 3], [4, 5], [4, 10], [0, 10]];
+    expect(p.length).toBe(expected.length);
+    p.forEach(([rho, z], i) => {
+      expect(rho).toBeCloseTo(expected[i][0]);
+      expect(z).toBeCloseTo(expected[i][1]);
+    });
+  });
+
+  it("carries a flush end past the face so the flare cuts through", () => {
+    const p = flaredProfile(hole({ bottom: { size: 6, angle: 90 } }), { top: null, bottom: -10 })!;
+    expect(p[0][1]).toBeLessThan(-10);
+    expect(p[1]).toEqual([3, p[0][1]]);
+    expect(p[p.length - 1]).toEqual([0, 10]);
+  });
+
+  it("rounds a rim over with a quarter circle tangent to wall and face", () => {
+    const p = flaredProfile(hole({ top: { size: 1 } }), { top: 5, bottom: null })!;
+    const arc = p.slice(2, 11);
+    expect(arc[0]).toEqual([2, 4]);
+    expect(arc[arc.length - 1]).toEqual([3, 5]);
+    for (const [rho, z] of arc) {
+      expect(Math.hypot(rho - 3, z - 4)).toBeCloseTo(1);
+      // On the corner's side of the centre: outside the wall, below the face.
+      expect(rho).toBeGreaterThanOrEqual(2);
+      expect(rho).toBeLessThanOrEqual(3);
+      expect(z).toBeGreaterThanOrEqual(4);
+      expect(z).toBeLessThanOrEqual(5);
+    }
+    // The material a quarter-round removes: the corner square less the
+    // quarter disc, swept round the hole.
+    const [mr, mz] = arc[4];
+    expect(Math.hypot(mr - 2, mz - 5)).toBeLessThan(1);
+  });
+
+  it("offers a line at each found rim, on the flare's outer edge once treated", () => {
+    const plain = rimEdges(hole({}), { top: 5, bottom: -5 });
+    expect(plain.map((e) => e.id)).toEqual([RIM_TOP, RIM_BOTTOM]);
+    expect(plain[0].points.slice(0, 3)).toEqual([2, 0, 5]);
+    const sunk = rimEdges(hole({ top: { size: 8, angle: 90 } }), { top: 5, bottom: null });
+    expect(sunk.map((e) => e.id)).toEqual([RIM_TOP]);
+    expect(sunk[0].points.slice(0, 3)).toEqual([4, 0, 5]);
   });
 });
 

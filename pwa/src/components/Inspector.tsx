@@ -4,7 +4,7 @@ import { Link2, Unlink2 } from "lucide-react";
 import { AXIS_COLORS } from "../constants/ui";
 import { sceneApi } from "../lib/sceneApi";
 import { FONT_NAMES, roundingSpec } from "../lib/primitives";
-import { parsePicks, pickEdges } from "../lib/rounding";
+import { isRimEdge, parsePicks, parseSinks, pickEdges, RIM_TOP } from "../lib/rounding";
 import {
   COUNT_PARAMS,
   FLAG_PARAMS,
@@ -278,8 +278,12 @@ function ShapeRounding({ node }: { node: ShapeNode }) {
   const [draft, setDraft] = useState<string | null>(null);
   if (!spec) return null;
   const total = pickEdges(spec).length;
-  const picks = parsePicks(node.kind, node.params);
-  const radii = [...picks.values()];
+  const all = parsePicks(node.kind, node.params);
+  const sinks = parseSinks(node.params);
+  // The shape's own edges, and the rims a hole leaves in what it cuts.
+  const picks = new Map([...all].filter(([id]) => !isRimEdge(id)));
+  const rims = [...all].filter(([id]) => isRimEdge(id));
+  const radii = [...picks].filter(([id]) => !sinks.has(id)).map(([, r]) => r);
   const same = radii.length > 0 && radii.every((r) => Math.abs(r - radii[0]) < 1e-6);
   const shown = same ? String(Number(mmToDisplay(radii[0], units).toFixed(3))) : "";
   const count =
@@ -288,6 +292,12 @@ function ShapeRounding({ node }: { node: ShapeNode }) {
       : picks.size >= total
         ? `All ${total} edges`
         : `${picks.size} of ${total} edges`;
+  const rimText = (id: string, size: number) => {
+    const angle = sinks.get(id);
+    const where = id === RIM_TOP ? "Top rim" : "Bottom rim";
+    const len = `${Number(mmToDisplay(size, units).toFixed(3))} ${units}`;
+    return angle === undefined ? `${where}: rounded, radius ${len}` : `${where}: countersunk, Ø${len} at ${angle}°`;
+  };
   const small = "rounded border border-neutral-300 px-1.5 py-0.5 text-xs hover:bg-neutral-100";
   const commit = () => {
     if (draft === null) return;
@@ -314,8 +324,14 @@ function ShapeRounding({ node }: { node: ShapeNode }) {
       {filletMode && (
         <p className="text-[11px] leading-snug text-neutral-500">
           Click any edge in the scene to round it. Click a rounded edge to make it square again.
+          {node.role === "hole" && node.kind === "cylinder" && " The rims this hole leaves in a grouped shape can be rounded or countersunk."}
         </p>
       )}
+      {rims.map(([id, size]) => (
+        <div key={id} className="text-xs text-neutral-600">
+          {rimText(id, size)}
+        </div>
+      ))}
       <div className="flex items-center justify-between gap-2 text-sm">
         <span className="text-neutral-500">{count}</span>
         <span className="flex gap-1">
