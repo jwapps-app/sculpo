@@ -2,9 +2,10 @@ import * as THREE from "three";
 import type { GroupNode, Project } from "../types/scene";
 import { isGroup, nodeRole } from "../types/scene";
 import { useSyncExternalStore } from "react";
-import { bakeChild, cutGroupBvh, holeRimOf, prepareChild, subtreeSignature } from "./csg";
+import { bakeChild, cutGroupBvh, holeLeaves, holeRimOf, prepareChild, subtreeSignature } from "./csg";
 import { manifoldLoaded } from "./manifold";
-import type { RimExits, RimSpec } from "./rounding/rims";
+import { holeRim, type RimExits, type RimSpec } from "./rounding/rims";
+import { bakeTransform } from "./transform";
 
 // Group evaluation off the UI thread. The children are prepared here (cheap:
 // primitives, and the transforms baked in) and the boolean — the part that
@@ -175,8 +176,18 @@ export function evaluateGroupAsync(group: GroupNode, nodes: Project["nodes"]): P
       let geo: THREE.BufferGeometry | null;
       let role: "solid" | "hole";
       if (isGroup(child)) {
-        geo = await evaluateGroupAsync(child, nodes);
         role = nodeRole(child, nodes);
+        if (role === "hole") {
+          for (const leaf of holeLeaves(child, nodes)) {
+            const g = prepareChild(leaf.node).geo;
+            if (!g) continue;
+            holes.push(bakeTransform(g, leaf.frame));
+            rims.push(holeRim(leaf.node, leaf.frame));
+            holeIds.push(leaf.node.id);
+          }
+          continue;
+        }
+        geo = await evaluateGroupAsync(child, nodes);
       } else {
         const prepared = prepareChild(child);
         geo = prepared.geo;

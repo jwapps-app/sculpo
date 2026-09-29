@@ -100,8 +100,17 @@ export function evaluateGroup(
     let geo: THREE.BufferGeometry | null;
     let role: "solid" | "hole";
     if (isGroup(child)) {
-      geo = evaluateGroup(child, nodes);
       role = nodeRole(child, nodes);
+      if (role === "hole") {
+        for (const leaf of holeLeaves(child, nodes)) {
+          const g = prepareChild(leaf.node).geo;
+          if (!g) continue;
+          holes.push(bakeTransform(g, leaf.frame));
+          rims.push(holeRim(leaf.node, leaf.frame));
+        }
+        continue;
+      }
+      geo = evaluateGroup(child, nodes);
     } else {
       const prepared = prepareChild(child);
       geo = prepared.geo;
@@ -123,6 +132,28 @@ export function evaluateGroup(
     if (clean) return clean;
   }
   return cutGroupBvh(add, cut);
+}
+
+/**
+ * The shapes inside a hole group, each with its full placement in the
+ * group being cut. A hole group is subtracted as its shapes one by one
+ * rather than as their union — the same cut, but each cylinder in it is
+ * then a hole of its own whose rims can be found and treated.
+ */
+export function holeLeaves(
+  group: GroupNode,
+  nodes: Project["nodes"],
+  frame = composeMatrix(group.position, group.rotation, group.scale),
+): { node: ShapeNode; frame: THREE.Matrix4 }[] {
+  const out: { node: ShapeNode; frame: THREE.Matrix4 }[] = [];
+  for (const id of group.childIds) {
+    const n = nodes[id];
+    if (!n) continue;
+    const f = frame.clone().multiply(composeMatrix(n.position, n.rotation, n.scale));
+    if (isGroup(n)) out.push(...holeLeaves(n, nodes, f));
+    else out.push({ node: n, frame: f });
+  }
+  return out;
 }
 
 /** The rim spec for a hole child, with its placement in the group, or null. */

@@ -6,7 +6,7 @@ import { LineSegmentsGeometry } from "three/addons/lines/LineSegmentsGeometry.js
 import { LineMaterial } from "three/addons/lines/LineMaterial.js";
 import { MeshBVH } from "three-mesh-bvh";
 import { useScene } from "../state/store";
-import { isGroup, type Project, type ShapeNode } from "../types/scene";
+import { isGroup, nodeRole, type Project, type ShapeNode } from "../types/scene";
 import { roundingSpec } from "../lib/primitives";
 import { holeRim, parsePicks, pickEdges, rimEdges, roundFamily, type PickEdge } from "../lib/rounding";
 import { peekExits, useEvaluationTick } from "../lib/csgAsync";
@@ -59,7 +59,11 @@ function collectLeaves(nodes: Project["nodes"], rootOrder: string[], editingId: 
     const m = matrixOf(n);
     const w = world.clone().multiply(m);
     const f = frame.clone().multiply(m);
-    if (isGroup(n)) for (const c of n.childIds) walk(c, w, f, owner, groupId, n.id);
+    if (isGroup(n)) {
+      // A hole group's shapes are cut in the group above it, one by one.
+      const parent = nodeRole(n, nodes) === "hole" ? parentId : n.id;
+      for (const c of n.childIds) walk(c, w, f, owner, groupId, parent);
+    }
     else out.push({ node: n, world: w, owner, within: { groupId, frame: f, parentId } });
   };
   // A group rendered as one solid: its parts, checked against its surface.
