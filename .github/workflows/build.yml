@@ -45,7 +45,7 @@ jobs:
           TEST_DATABASE_URL: postgresql+asyncpg://app:app@localhost:5432/app
         run: pytest -q
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
